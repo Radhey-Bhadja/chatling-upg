@@ -41,7 +41,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const connections = new Map();
   // Nicknames map: peerId -> nickname string
   const peerNicknames = new Map();
-  // Typing state map: peerId -> nickname string
+  // Typing state map: peerId -> { nickname: string, timer: number }
   const activeTypers = new Map();
 
   let typingTimeout = null;
@@ -131,6 +131,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let name = userNicknameInput ? userNicknameInput.value.trim() : '';
     if (!name) {
       name = 'User_' + Math.floor(1000 + Math.random() * 9000);
+      if (userNicknameInput) userNicknameInput.value = name;
     }
     try {
       localStorage.setItem('chatling_nickname', name);
@@ -457,7 +458,7 @@ document.addEventListener('DOMContentLoaded', () => {
    */
   function updateTypingDisplay() {
     if (!typingIndicator || !typingText) return;
-    const typers = Array.from(activeTypers.values());
+    const typers = Array.from(activeTypers.values()).map(t => t.nickname);
     if (typers.length === 0) {
       typingIndicator.classList.add('hidden');
     } else if (typers.length === 1) {
@@ -478,8 +479,12 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    const conn = peer.connect(targetPeerId, { reliable: true });
-    setupConnectionListeners(conn);
+    try {
+      const conn = peer.connect(targetPeerId, { reliable: true });
+      setupConnectionListeners(conn);
+    } catch (e) {
+      console.warn(`Could not connect to peer ${targetPeerId}`, e);
+    }
   }
 
   function setupConnectionListeners(conn) {
@@ -488,7 +493,7 @@ document.addEventListener('DOMContentLoaded', () => {
     conn.on('open', () => {
       connections.set(peerId, conn);
 
-      // Send introduction with my nickname
+      // Send introduction with my nickname and senderId
       conn.send({
         type: 'intro',
         senderId: myPeerId,
@@ -527,9 +532,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (data.type === 'intro') {
         const name = data.nickname || 'Member';
+        const isNew = !peerNicknames.has(peerId);
         peerNicknames.set(peerId, name);
-        showToast(`${name} joined the group!`, 'success');
-        appendSystemBanner(`${name} joined the group`);
+        if (isNew) {
+          showToast(`${name} joined the group!`, 'success');
+          appendSystemBanner(`${name} joined the group`);
+        }
         updateGroupStatus();
         return;
       }
@@ -565,7 +573,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // Send delivery receipt
-        conn.send({ type: 'message-delivered', id: data.id });
+        try {
+          conn.send({ type: 'message-delivered', id: data.id });
+        } catch (e) {}
         return;
       }
 
@@ -576,13 +586,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (data.type === 'typing') {
         const name = data.nickname || peerNicknames.get(peerId) || 'Someone';
-        activeTypers.set(peerId, name);
+        // Clear existing auto-stop timer if any
+        if (activeTypers.has(peerId)) {
+          clearTimeout(activeTypers.get(peerId).timer);
+        }
+        // Auto remove typing indicator after 3.5s in case stop-typing packet drops
+        const timer = setTimeout(() => {
+          activeTypers.delete(peerId);
+          updateTypingDisplay();
+        }, 3500);
+
+        activeTypers.set(peerId, { nickname: name, timer });
         updateTypingDisplay();
         return;
       }
 
       if (data.type === 'stop-typing') {
-        activeTypers.delete(peerId);
+        if (activeTypers.has(peerId)) {
+          clearTimeout(activeTypers.get(peerId).timer);
+          activeTypers.delete(peerId);
+        }
         updateTypingDisplay();
         return;
       }
@@ -592,7 +615,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const departedName = peerNicknames.get(peerId) || 'A participant';
       connections.delete(peerId);
       peerNicknames.delete(peerId);
-      activeTypers.delete(peerId);
+      if (activeTypers.has(peerId)) {
+        clearTimeout(activeTypers.get(peerId).timer);
+        activeTypers.delete(peerId);
+      }
       updateTypingDisplay();
       updateGroupStatus();
       appendSystemBanner(`${departedName} left the chat`);
@@ -608,11 +634,11 @@ document.addEventListener('DOMContentLoaded', () => {
     p.on('error', (err) => {
       console.warn('[PEER ERROR]', err);
       if (err.type === 'peer-unavailable') {
-        showToast('Group room is not available or room host left.', 'error');
+        showToast('Group room is not available or room creator left.', 'error');
       } else if (err.type === 'unavailable-id') {
         showToast('Room ID collision. Retrying with new code...', 'info');
       } else {
-        showToast(`Peer connection error: ${err.type || 'disconnected'}`, 'error');
+        showToast(`Peer connection notice: ${err.type || 'network issue'}`, 'info');
       }
     });
   }
@@ -636,7 +662,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const roomCode = Math.floor(100000 + Math.random() * 900000).toString();
     const hostPeerId = `chatling-v1-${roomCode}`;
 
-    if (peer) peer.destroy();
+    if (peer) {
+      try { peer.destroy(); } catch (e) {}
+    }
 
     peer = new Peer(hostPeerId, PEER_CONFIG);
     setupPeerErrorHandlers(peer);
@@ -739,7 +767,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const hostPeerId = `chatling-v1-${code}`;
 
-    if (peer) peer.destroy();
+    if (peer) {
+      try { peer.destroy(); } catch (e) {}
+    }
 
     // Unique random peer ID for this joining peer
     peer = new Peer(PEER_CONFIG);
@@ -780,6 +810,7 @@ document.addEventListener('DOMContentLoaded', () => {
   if (roomParam && roomParam.length === 6) {
     switchHomeTab('join');
     if (joinCodeInput) joinCodeInput.value = roomParam;
+    // Don't auto-join blindly if nickname is empty, wait slightly for user or use default
     setTimeout(() => {
       handleJoinRoom();
     }, 600);
@@ -853,10 +884,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     connections.clear();
     peerNicknames.clear();
+
+    activeTypers.forEach(t => clearTimeout(t.timer));
     activeTypers.clear();
 
     if (peer) {
-      peer.destroy();
+      try { peer.destroy(); } catch (e) {}
       peer = null;
     }
 

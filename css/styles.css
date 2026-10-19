@@ -8,6 +8,7 @@
   --color-primary: #10b981;
   --color-primary-dark: #059669;
   --color-accent: #06b6d4;
+  --wa-green: #25D366;
 
   /* Theme Backgrounds */
   --bg-light: #f8fafc;
@@ -20,6 +21,14 @@
   --bubble-out-dark: #064e3b;
   --bubble-in-light: #ffffff;
   --bubble-in-dark: #1e293b;
+}
+
+.bg-wa-green {
+  background-color: #10b981 !important;
+}
+
+.text-wa-green {
+  color: #10b981 !important;
 }
 
 /* Dynamic Viewport Height for Mobile Browser URL Bar Safe-Area */
