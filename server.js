@@ -24,7 +24,7 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// In-Memory Storage: Room Code -> { users: Array<{ id, joinedAt }>, createdAt }
+// In-Memory Storage: Room Code -> { users: Array<{ id, nickname, joinedAt }>, createdAt }
 const rooms = new Map();
 
 /**
@@ -52,26 +52,28 @@ function cleanupRoom(code) {
 io.on('connection', (socket) => {
   console.log(`[CONNECTED] Socket ${socket.id}`);
 
-  // Create a new chat room
-  socket.on('create-room', (callback) => {
+  // Create a new group chat room
+  socket.on('create-room', ({ nickname } = {}, callback) => {
     const code = generateRoomCode();
+    const userNick = (nickname || 'Host').trim();
     rooms.set(code, {
       code,
-      users: [{ id: socket.id, joinedAt: Date.now() }],
+      users: [{ id: socket.id, nickname: userNick, joinedAt: Date.now() }],
       createdAt: Date.now()
     });
 
     socket.join(`room:${code}`);
     socket.currentRoom = code;
+    socket.nickname = userNick;
 
-    console.log(`[ROOM CREATED] ${code} by ${socket.id}`);
+    console.log(`[GROUP ROOM CREATED] ${code} by ${userNick} (${socket.id})`);
     if (typeof callback === 'function') {
-      callback({ success: true, code });
+      callback({ success: true, code, nickname: userNick });
     }
   });
 
-  // Join an existing room
-  socket.on('join-room', ({ code }, callback) => {
+  // Join an existing group room (allows multiple participants)
+  socket.on('join-room', ({ code, nickname }, callback) => {
     const formattedCode = (code || '').trim();
     const room = rooms.get(formattedCode);
 
@@ -82,32 +84,30 @@ io.on('connection', (socket) => {
       return socket.emit('error-message', 'Invalid or expired room code.');
     }
 
-    // Strict 2-user capacity limit check
-    if (room.users.length >= 2) {
-      if (typeof callback === 'function') {
-        return callback({ success: false, message: 'Room is full (Max 2 participants allowed).' });
-      }
-      return socket.emit('error-message', 'Room is full (Max 2 participants allowed).');
-    }
+    const userNick = (nickname || 'Member').trim();
 
     // Add user to room
-    room.users.push({ id: socket.id, joinedAt: Date.now() });
+    room.users.push({ id: socket.id, nickname: userNick, joinedAt: Date.now() });
     socket.join(`room:${formattedCode}`);
     socket.currentRoom = formattedCode;
+    socket.nickname = userNick;
 
-    console.log(`[USER JOINED] ${socket.id} joined room ${formattedCode}`);
+    console.log(`[USER JOINED GROUP] ${userNick} (${socket.id}) joined room ${formattedCode}. Total: ${room.users.length}`);
 
     if (typeof callback === 'function') {
-      callback({ success: true, code: formattedCode });
+      callback({ success: true, code: formattedCode, users: room.users });
     }
 
-    // Notify both sockets in the room that partner has connected
-    io.to(`room:${formattedCode}`).emit('partner-joined', {
+    // Broadcast to room members that a new participant has connected
+    io.to(`room:${formattedCode}`).emit('user-joined', {
+      id: socket.id,
+      nickname: userNick,
+      users: room.users,
       userCount: room.users.length
     });
   });
 
-  // Relay chat message
+  // Relay chat message to everyone else in the group room
   socket.on('send-message', ({ content, tempId, timestamp }) => {
     const roomCode = socket.currentRoom;
     if (!roomCode || !rooms.has(roomCode)) return;
@@ -115,30 +115,33 @@ io.on('connection', (socket) => {
     const messageData = {
       id: tempId || `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       sender: socket.id,
+      senderName: socket.nickname || 'Member',
       content,
       timestamp: timestamp || new Date().toISOString()
     };
 
-    // Broadcast to counterpart in room
+    // Broadcast to all other peers in group room
     socket.to(`room:${roomCode}`).emit('receive-message', messageData);
 
-    // Acknowledge delivery back to sender if partner is present
-    const room = rooms.get(roomCode);
-    if (room && room.users.length === 2) {
-      socket.emit('message-delivered', { id: messageData.id });
-    }
+    // Acknowledge delivery back to sender
+    socket.emit('message-delivered', { id: messageData.id });
   });
 
   // Typing indicators
   socket.on('typing', () => {
     if (socket.currentRoom) {
-      socket.to(`room:${socket.currentRoom}`).emit('partner-typing');
+      socket.to(`room:${socket.currentRoom}`).emit('user-typing', {
+        id: socket.id,
+        nickname: socket.nickname || 'Someone'
+      });
     }
   });
 
   socket.on('stop-typing', () => {
     if (socket.currentRoom) {
-      socket.to(`room:${socket.currentRoom}`).emit('partner-stop-typing');
+      socket.to(`room:${socket.currentRoom}`).emit('user-stop-typing', {
+        id: socket.id
+      });
     }
   });
 
@@ -152,12 +155,15 @@ io.on('connection', (socket) => {
     socket.leave(`room:${code}`);
     socket.currentRoom = null;
 
-    console.log(`[USER LEFT] ${socket.id} left room ${code}`);
+    console.log(`[USER LEFT GROUP] ${socket.nickname} (${socket.id}) left room ${code}`);
 
-    // Notify counterpart
-    socket.to(`room:${code}`).emit('partner-left');
+    // Notify remaining room members
+    socket.to(`room:${code}`).emit('user-left', {
+      id: socket.id,
+      nickname: socket.nickname || 'Member',
+      userCount: room.users.length
+    });
 
-    // Self cleaning if empty
     cleanupRoom(code);
   });
 
@@ -169,10 +175,12 @@ io.on('connection', (socket) => {
       const room = rooms.get(code);
       room.users = room.users.filter(u => u.id !== socket.id);
 
-      // Notify counterpart
-      socket.to(`room:${code}`).emit('partner-left');
+      socket.to(`room:${code}`).emit('user-left', {
+        id: socket.id,
+        nickname: socket.nickname || 'Member',
+        userCount: room.users.length
+      });
 
-      // Purge room if both users disconnected
       cleanupRoom(code);
     }
   });
@@ -181,9 +189,9 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`==================================================`);
-  console.log(` Chatling Ephemeral Chat Server Running `);
+  console.log(` Chatling Ephemeral Group Chat Server Running `);
   console.log(` Local URL: http://localhost:${PORT}`);
-  console.log(` Environment: Zero DB / Volatile In-Memory Storage `);
+  console.log(` Environment: Zero DB / Volatile In-Memory Group Storage `);
   console.log(`==================================================`);
 });
 

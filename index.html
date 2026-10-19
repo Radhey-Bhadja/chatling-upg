@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
-  <title>Chatling | Ephemeral Serverless 1-to-1 Chat</title>
+  <title>Chatling | Private Ephemeral Group & 1-to-1 Chat</title>
   <link rel="icon" type="image/png" href="logo.png" />
   <link rel="apple-touch-icon" href="logo.png" />
   <!-- Tailwind CSS CDN -->
@@ -47,46 +47,66 @@
   </div>
 
   <!-- HOME VIEW (Room Creation / Join Screen) -->
-  <div id="home-view" class="h-full w-full flex items-center justify-center p-4 sm:p-6 relative overflow-hidden bg-slate-50 dark:bg-slate-950">
+  <div id="home-view" class="h-full w-full flex items-center justify-center p-4 sm:p-6 relative overflow-y-auto bg-slate-50 dark:bg-slate-950">
     
     <!-- Ambient subtle background glow -->
     <div class="absolute -top-32 left-1/2 -translate-x-1/2 w-96 h-96 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none"></div>
 
-    <div class="w-full max-w-sm sm:max-w-md bg-white dark:bg-slate-900 rounded-[32px] sm:rounded-[36px] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.08)] border border-slate-100 dark:border-slate-800 p-6 sm:p-9 transition-all relative z-10">
+    <div class="w-full max-w-sm sm:max-w-md bg-white dark:bg-slate-900 rounded-[32px] sm:rounded-[36px] shadow-[0_20px_60px_-15px_rgba(0,0,0,0.08)] border border-slate-100 dark:border-slate-800 p-6 sm:p-8 transition-all relative z-10 my-auto">
       
       <!-- Circular Badge Logo and Title -->
-      <div class="flex flex-col items-center justify-center text-center mb-6 select-none">
-        <div class="w-24 h-24 sm:w-28 sm:h-28 rounded-full bg-white shadow-[0_4px_20px_rgba(0,0,0,0.08)] border border-slate-100 dark:border-slate-800 flex items-center justify-center p-1.5 mb-3 transition-transform duration-300 hover:scale-105">
+      <div class="flex flex-col items-center justify-center text-center mb-5 select-none">
+        <div class="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-white shadow-[0_4px_20px_rgba(0,0,0,0.08)] border border-slate-100 dark:border-slate-800 flex items-center justify-center p-1 mb-2.5 transition-transform duration-300 hover:scale-105">
           <img src="logo.png" alt="Chatling Logo" class="w-full h-full object-contain rounded-full" />
         </div>
-        <h1 class="text-3xl sm:text-[34px] font-black tracking-tight text-[#0b172a] dark:text-white">Chatling</h1>
+        <h1 class="text-2xl sm:text-3xl font-black tracking-tight text-[#0b172a] dark:text-white">Chatling</h1>
+        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Private Ephemeral Group & 1-to-1 Chat</p>
       </div>
 
-      <!-- Mode Selector Tabs (Create Room active by default) -->
-      <div class="flex rounded-2xl bg-slate-100 dark:bg-slate-800 p-1 mb-6 border border-slate-200/60 dark:border-slate-700/60">
-        <button type="button" id="tab-create" class="flex-1 py-2.5 sm:py-3 text-xs sm:text-sm font-bold rounded-xl bg-emerald-500 text-white shadow-sm transition-all cursor-pointer">
-          Create Room
+      <!-- Your Name Input (WhatsApp Style) -->
+      <div class="mb-5">
+        <label for="user-nickname-input" class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5 select-none">
+          Your Nickname / Display Name
+        </label>
+        <div class="relative">
+          <input 
+            type="text" 
+            id="user-nickname-input" 
+            maxlength="20" 
+            placeholder="e.g. Alex" 
+            class="w-full text-base font-semibold py-2.5 px-4 rounded-xl border border-slate-300 dark:border-slate-700 bg-slate-50/70 dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none transition-all"
+          />
+          <div class="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 text-xs">
+            👤
+          </div>
+        </div>
+      </div>
+
+      <!-- Mode Selector Tabs (Create Group active by default) -->
+      <div class="flex rounded-2xl bg-slate-100 dark:bg-slate-800 p-1 mb-5 border border-slate-200/60 dark:border-slate-700/60">
+        <button type="button" id="tab-create" class="flex-1 py-2.5 text-xs sm:text-sm font-bold rounded-xl bg-emerald-500 text-white shadow-sm transition-all cursor-pointer">
+          Create Group
         </button>
-        <button type="button" id="tab-join" class="flex-1 py-2.5 sm:py-3 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer text-slate-600 dark:text-slate-300 hover:text-slate-900">
-          Join Room
+        <button type="button" id="tab-join" class="flex-1 py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer text-slate-600 dark:text-slate-300 hover:text-slate-900">
+          Join Group
         </button>
       </div>
 
       <!-- Create Room Section (Active by default) -->
-      <div id="section-create" class="space-y-4 sm:space-y-5">
-        <div class="text-center p-5 sm:p-6 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 select-none">
-          <span class="text-[11px] uppercase tracking-widest font-black text-slate-400 dark:text-slate-400">6-DIGIT ROOM CODE</span>
-          <div id="created-code-display" class="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-widest sm:tracking-[0.2em] text-emerald-600 dark:text-emerald-400 my-3 font-mono whitespace-nowrap select-all">
+      <div id="section-create" class="space-y-4">
+        <div class="text-center p-4 sm:p-5 rounded-2xl bg-slate-50/80 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/80 select-none">
+          <span class="text-[10px] uppercase tracking-widest font-black text-slate-400 dark:text-slate-400">6-DIGIT GROUP ROOM CODE</span>
+          <div id="created-code-display" class="text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-widest sm:tracking-[0.2em] text-emerald-600 dark:text-emerald-400 my-2.5 font-mono whitespace-nowrap select-all">
             ------
           </div>
-          <p class="text-xs text-slate-500 dark:text-slate-400">Share code or link with partner to connect.</p>
+          <p class="text-xs text-slate-500 dark:text-slate-400">Share with multiple friends to start group chatting.</p>
         </div>
 
-        <button type="button" id="btn-generate-code" class="w-full py-3.5 sm:py-4 px-4 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.99] text-white font-bold text-sm sm:text-base rounded-2xl shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer">
+        <button type="button" id="btn-generate-code" class="w-full py-3.5 px-4 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.99] text-white font-bold text-sm sm:text-base rounded-2xl shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
           </svg>
-          Generate Room Code
+          Generate Group Room
         </button>
 
         <div id="create-actions" class="hidden space-y-3 pt-1">
@@ -101,18 +121,18 @@
               <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/>
               </svg>
-              Copy Link
+              Invite Link
             </button>
           </div>
 
           <button type="button" id="btn-enter-chat" class="w-full py-3.5 px-4 bg-emerald-500 hover:bg-emerald-600 text-white font-extrabold text-sm rounded-2xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer">
-            Enter Chat Room &rarr;
+            Enter Group Chat &rarr;
           </button>
         </div>
       </div>
 
       <!-- Join Room Section -->
-      <div id="section-join" class="hidden space-y-4 sm:space-y-5">
+      <div id="section-join" class="hidden space-y-4">
         <div>
           <label for="join-code-input" class="block text-[11px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2 select-none">
             ENTER 6-DIGIT ROOM CODE
@@ -122,21 +142,21 @@
             id="join-code-input" 
             maxlength="6" 
             placeholder="E.G. 839201" 
-            class="w-full text-center text-2xl sm:text-3xl font-mono font-bold tracking-widest py-3 sm:py-3.5 px-4 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none transition-all uppercase"
+            class="w-full text-center text-2xl sm:text-3xl font-mono font-bold tracking-widest py-3 px-4 rounded-2xl border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none transition-all uppercase"
           />
         </div>
 
-        <button type="button" id="btn-join-room" class="w-full py-3.5 sm:py-4 px-4 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base rounded-2xl shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer">
-          Join Room &larr;
+        <button type="button" id="btn-join-room" class="w-full py-3.5 px-4 bg-emerald-500 hover:bg-emerald-600 active:scale-[0.99] text-white font-extrabold text-sm sm:text-base rounded-2xl shadow-md shadow-emerald-500/20 transition-all flex items-center justify-center gap-2 cursor-pointer">
+          Join Group &rarr;
         </button>
       </div>
 
       <!-- Footer Info -->
-      <div class="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 text-center text-xs text-emerald-600/90 dark:text-emerald-400 font-medium select-none flex items-center justify-center gap-1.5">
+      <div class="mt-5 pt-3.5 border-t border-slate-100 dark:border-slate-800 text-center text-xs text-emerald-600/90 dark:text-emerald-400 font-medium select-none flex items-center justify-center gap-1.5">
         <svg class="w-3.5 h-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
         </svg>
-        <span>End-to-End Encrypted Peer-to-Peer Chat</span>
+        <span>Direct Peer-to-Peer Mesh • End-to-End Private • Zero DB</span>
       </div>
     </div>
   </div>
@@ -147,26 +167,37 @@
     <!-- Chatling Header Bar -->
     <header class="h-14 sm:h-16 px-3 sm:px-6 md:px-8 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between shrink-0 shadow-sm z-10 select-none">
       
-      <!-- Partner Status & Info -->
-      <div class="flex items-center gap-2.5 sm:gap-3">
-        <!-- Partner Avatar -->
+      <!-- Group Info & Participants Trigger -->
+      <div class="flex items-center gap-2.5 sm:gap-3 cursor-pointer group" id="btn-group-info" title="Click to view members">
+        <!-- Group Avatar -->
         <div class="relative shrink-0">
           <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-emerald-500/20 to-cyan-500/20 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-base sm:text-lg shadow-sm">
             <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/>
+              <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
             </svg>
           </div>
           <div id="status-indicator" class="absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-amber-500 border-2 border-white dark:border-slate-900"></div>
         </div>
 
         <div class="min-w-0">
-          <h2 class="font-bold text-slate-900 dark:text-white text-xs sm:text-sm leading-tight truncate">1-to-1 Partner</h2>
-          <p id="status-text" class="text-[10px] sm:text-xs text-amber-600 dark:text-amber-400 font-medium truncate">Waiting for partner...</p>
+          <div class="flex items-center gap-1.5">
+            <h2 id="header-group-title" class="font-bold text-slate-900 dark:text-white text-xs sm:text-sm leading-tight truncate">Group Chat</h2>
+            <span id="badge-member-count" class="px-1.5 py-0.2 bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 rounded-full text-[10px] font-bold">1</span>
+          </div>
+          <p id="status-text" class="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium truncate">Waiting for others to join...</p>
         </div>
       </div>
 
-      <!-- Header Tools (Code Pill, Theme, Exit) -->
+      <!-- Header Tools (Invite, Room Code Pill, Theme, Exit) -->
       <div class="flex items-center gap-1.5 sm:gap-2">
+        <!-- Quick Invite / Share Button -->
+        <button type="button" id="header-invite-btn" title="Share invite link" class="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500 text-emerald-600 hover:text-white dark:bg-emerald-500/20 dark:hover:bg-emerald-500 dark:text-emerald-300 dark:hover:text-white text-xs font-bold transition-all cursor-pointer">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          <span class="hidden sm:inline">Invite</span>
+        </button>
+
         <!-- Room Code Pill -->
         <button type="button" id="header-code-pill" title="Click to copy room code" class="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 transition-all border border-slate-200/60 dark:border-slate-700 cursor-pointer">
           <span class="text-slate-400 dark:text-slate-500 text-[10px]">ROOM:</span>
@@ -202,6 +233,34 @@
       </div>
     </header>
 
+    <!-- Group Members Modal / Flyout -->
+    <div id="members-modal" class="hidden fixed inset-0 z-40 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl max-w-sm w-full p-5 shadow-2xl space-y-4">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+          <div class="flex items-center gap-2">
+            <span class="text-base font-bold text-slate-900 dark:text-white">Group Members</span>
+            <span id="modal-member-count" class="px-2 py-0.5 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300">1 online</span>
+          </div>
+          <button type="button" id="btn-close-members" class="p-1 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-slate-200">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        <ul id="members-list" class="space-y-2 max-h-60 overflow-y-auto">
+          <!-- Dynamically populated -->
+        </ul>
+        <div class="pt-2">
+          <button type="button" id="btn-modal-invite" class="w-full py-2.5 px-4 bg-emerald-500 hover:bg-emerald-600 text-white font-bold text-xs rounded-xl shadow transition-all flex items-center justify-center gap-1.5">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+            </svg>
+            Copy Invite Link
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- Chat Messages Window -->
     <main id="chat-messages" class="flex-1 wa-chat-bg overflow-y-auto p-3 sm:p-4 md:px-16 space-y-2.5 sm:space-y-3">
       
@@ -211,7 +270,7 @@
           <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
           </svg>
-          <span>End-to-End Peer Connection • Zero Server Storage • Cleared on exit</span>
+          <span>End-to-End Mesh Group • Zero Server Storage • Ephemeral</span>
         </div>
       </div>
 
@@ -220,7 +279,7 @@
 
     <!-- Typing Indicator Area -->
     <div id="typing-indicator" class="hidden px-4 sm:px-6 py-1.5 text-[11px] sm:text-xs text-emerald-500 font-bold bg-white/60 dark:bg-slate-900/60 flex items-center gap-1.5 border-t border-slate-200/50 dark:border-slate-800 select-none backdrop-blur-sm">
-      <span>Partner is typing</span>
+      <span id="typing-text">Someone is typing</span>
       <span class="inline-flex gap-0.5">
         <span class="typing-dot">.</span>
         <span class="typing-dot">.</span>

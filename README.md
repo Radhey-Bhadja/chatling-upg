@@ -1,58 +1,43 @@
-# Chatling - Ephemeral 1-to-1 Real-Time Chat
+# Chatling - Private Ephemeral Group & 1-to-1 Web Chat
 
-A lightweight, secure, ephemeral 1-to-1 web chat application built for instant communication. Requires **ZERO database setup** and **ZERO user authentication**.
+A fast, private, ephemeral web group and 1-to-1 chat application built with **PeerJS (WebRTC full mesh)**. Requires **ZERO database setup** and **ZERO user authentication**.
 
-## Features
-
-- 🔒 **Zero Database & Zero Authentication**: No accounts, login, or persistent DB. All state is held in server memory and purges when participants leave.
-- 🔑 **6-Digit Room Code**: Fast 1-click room creation with copy code & direct link (`?room=123456`) auto-join.
-- 👥 **Strict 2-User Capacity**: Enforces max 2 active users per room ($N \le 2$).
-- 💬 **Bi-directional Real-Time Messaging**: Instant text transmission with timestamps & status indicators.
-- ✍️ **Live Typing Indicator**: Real-time `"Partner is typing..."` feedback.
-- 🎨 **Sleek Interface**: Responsive layout, Tailwind CSS, dark/light theme toggle, background pattern, and emoji picker.
+Live ready for **Vercel**, GitHub Pages, or any static hosting platform.
 
 ---
 
-## Deployment Instructions
+## ✨ Features
 
-### 1. Push to GitHub
-
-Run the following commands in your terminal inside the project directory:
-
-```bash
-git init
-git add .
-git commit -m "Initial commit - Chatling Ephemeral Chat"
-git branch -M main
-git remote add origin https://github.com/YOUR_USERNAME/YOUR_REPOSITORY.name.git
-git push -u origin main
-```
+- 👥 **Group Chatting (WhatsApp Style)**: More than two people can connect directly in a private group room with live full-mesh WebRTC.
+- 🔒 **Direct Peer-to-Peer & Zero DB**: Messages flow directly between users' browsers encrypted over WebRTC DataChannels. Nothing is stored on any server or database. Once you leave, the chat is gone.
+- 🏷️ **Custom Nicknames & Color-Coded Senders**: Enter your display name; incoming group messages show the sender's name with WhatsApp-style colorful identifiers.
+- 🔑 **6-Digit Room Code & 1-Click Invite Links**: Fast room creation, copy code, and direct link (`?room=123456`) auto-join with Web Share API integration.
+- 📋 **Live Member Roster**: Tap the group header to see who is currently in the room.
+- ✍️ **Group Live Typing Indicators**: Real-time feedback showing who is currently typing in the group.
+- 🎨 **Modern WhatsApp UI**: Tailwind CSS, responsive mobile keyboard behaviors, Dark/Light mode toggle, haptic vibration feedback, and custom emoji picker.
 
 ---
 
-### 2. Deploy to Vercel
+## 🚀 Deploying Live to Vercel
 
-1. Go to [Vercel Dashboard](https://vercel.com/dashboard) and click **"Add New Project"**.
-2. Connect your GitHub account and import your repository.
-3. Keep the default settings (Framework Preset: **Other**).
-4. Click **Deploy**. Vercel will auto-detect `vercel.json` and deploy your app instantly!
+1. Push your updated code to GitHub:
+   ```bash
+   git add .
+   git commit -m "Upgrade to multi-user group chat"
+   git push
+   ```
+2. Go to your [Vercel Dashboard](https://vercel.com/dashboard).
+3. Select your **Chatling** project (or click **"Add New Project"** and import the GitHub repository).
+4. Framework Preset: **Other** (Root directory: `./`).
+5. Click **Deploy**. Vercel will deploy the site live in seconds!
 
----
-
-### 3. Alternative Free Hosting (Render / Railway)
-
-Because Socket.io uses persistent WebSocket connections, Render or Railway are also great hosting options:
-
-#### Render.com
-1. Go to [Render Dashboard](https://dashboard.render.com/) -> **New Web Service**.
-2. Connect your GitHub repo.
-3. Build Command: `npm install`
-4. Start Command: `npm start`
-5. Click **Create Web Service**.
+Because the group chat runs entirely peer-to-peer via WebRTC (PeerJS + STUN/TURN fallback), **it works 100% serverless on Vercel without requiring a dedicated WebSocket server**.
 
 ---
 
-## Local Development
+## 💻 Optional: Local Node.js Development
+
+If you wish to test with the optional local Node.js Express server:
 
 ```bash
 # Install dependencies
@@ -61,5 +46,4 @@ npm install
 # Start local server
 npm start
 ```
-
-Open `http://localhost:3000` in your browser.
+Open `http://localhost:3000` in multiple browser windows or devices.
