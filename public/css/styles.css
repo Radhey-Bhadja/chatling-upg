@@ -22,6 +22,10 @@
 }
 
 /* Dynamic Viewport Height & Mobile Browser Polish */
+* {
+  box-sizing: border-box;
+}
+
 html, body {
   height: 100dvh;
   width: 100vw;
@@ -41,6 +45,11 @@ html, body {
 .dark html, .dark body, html.dark, html.dark body {
   background-color: #080c14;
   color: #f1f5f9;
+}
+
+/* Safe Area Inset Support for Mobile Browsers */
+footer {
+  padding-bottom: max(0.625rem, env(safe-area-inset-bottom));
 }
 
 /* Smooth layout transitions */
@@ -113,19 +122,29 @@ html, body {
   background-size: 18px 18px;
 }
 
+/* Header Navigation Bar Buttons Uniform Sizing */
+.nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.15s ease-in-out;
+  cursor: pointer;
+}
+
 /* Chat Message Bubbles */
 .bubble {
   position: relative;
   word-break: break-word;
   overflow-wrap: anywhere;
-  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.08);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.06);
   animation: bubble-in 0.15s cubic-bezier(0.16, 1, 0.3, 1) ease-out;
 }
 
 @keyframes bubble-in {
   from {
     opacity: 0;
-    transform: translateY(5px) scale(0.98);
+    transform: translateY(4px) scale(0.98);
   }
   to {
     opacity: 1;

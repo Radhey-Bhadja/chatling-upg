@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
   <title>Chatling | Private Ephemeral Group & 1-to-1 Chat</title>
-  <link rel="icon" type="image/png" href="logo.png" />
-  <link rel="apple-touch-icon" href="logo.png" />
+  <link rel="icon" type="image/png" href="/logo.png" />
+  <link rel="apple-touch-icon" href="/logo.png" />
   
   <!-- Critical Instant Theme Init to prevent Flash of Unstyled Theme -->
   <script>
@@ -31,8 +31,8 @@
   <!-- Google Fonts with Display Swap for Zero-Delay Text Rendering -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;800&display=swap" />
 
-  <!-- Pre-Compiled Core Stylesheet -->
-  <link rel="stylesheet" href="css/styles.css" />
+  <!-- Core Self-Contained Stylesheet -->
+  <link rel="stylesheet" href="/css/styles.css" />
 
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -83,7 +83,7 @@
       <!-- Circular Badge Logo and Title -->
       <div class="flex flex-col items-center justify-center text-center mb-5 select-none">
         <div class="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-white shadow-[0_4px_20px_rgba(0,0,0,0.08)] border border-slate-100 dark:border-slate-800 flex items-center justify-center p-1 mb-2.5 transition-transform duration-300 hover:scale-105">
-          <img src="logo.png" alt="Chatling Logo" class="w-full h-full object-contain rounded-full" width="96" height="96" fetchpriority="high" />
+          <img src="/logo.png" alt="Chatling Logo" class="w-full h-full object-contain rounded-full" width="96" height="96" fetchpriority="high" />
         </div>
         <h1 class="text-2xl sm:text-3xl font-black tracking-tight text-[#0b172a] dark:text-white">Chatling</h1>
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Private Ephemeral Group & 1-to-1 Chat</p>
@@ -193,13 +193,13 @@
   <div id="chat-view" class="hidden h-full w-full flex flex-col bg-slate-100 dark:bg-dark-bg">
 
     <!-- Responsive Chat Header Bar -->
-    <header class="h-14 sm:h-16 px-2.5 sm:px-4 md:px-6 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between shrink-0 shadow-sm z-10 select-none">
+    <header class="h-14 sm:h-16 px-2 sm:px-4 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border-b border-slate-200/80 dark:border-slate-800 flex items-center justify-between shrink-0 shadow-xs z-10 select-none gap-2">
       
-      <!-- Group Info & Participants Trigger -->
-      <div class="flex items-center gap-2 sm:gap-3 cursor-pointer group min-w-0 max-w-[55%] sm:max-w-[50%]" id="btn-group-info" title="Click to view members">
+      <!-- Group Info & Participants Trigger (Responsive Left Column) -->
+      <div class="flex items-center gap-2 sm:gap-2.5 cursor-pointer group min-w-0 flex-1 pr-1" id="btn-group-info" title="Click to view members">
         <!-- Group Avatar -->
         <div class="relative shrink-0">
-          <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-emerald-500/20 to-cyan-500/20 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-base sm:text-lg shadow-sm">
+          <div class="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-gradient-to-tr from-emerald-500/20 to-cyan-500/20 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-base sm:text-lg shadow-xs">
             <svg class="w-5 h-5 sm:w-6 sm:h-6" fill="currentColor" viewBox="0 0 24 24">
               <path d="M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5s-3 1.34-3 3 1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z"/>
             </svg>
@@ -208,55 +208,55 @@
         </div>
 
         <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-1.5">
+          <div class="flex items-center gap-1.5 min-w-0">
             <h2 id="header-group-title" class="font-bold text-slate-900 dark:text-white text-xs sm:text-sm leading-tight truncate">Group Chat</h2>
-            <span id="badge-member-count" class="px-1.5 py-0.2 bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 rounded-full text-[10px] font-bold shrink-0">1</span>
+            <span id="badge-member-count" class="px-1.5 py-0.5 bg-emerald-100 dark:bg-emerald-950/80 text-emerald-700 dark:text-emerald-300 rounded-full text-[10px] font-bold shrink-0">1</span>
           </div>
           <p id="status-text" class="text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium truncate">Waiting for others to join...</p>
         </div>
       </div>
 
-      <!-- Header Tools (Invite, Room Code Pill, Theme, Exit) -->
+      <!-- Navigation Bar Tool Actions (Uniform & Non-Wrapping) -->
       <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
         <!-- Quick Invite / Share Button -->
-        <button type="button" id="header-invite-btn" title="Share invite link" aria-label="Share invite link" class="flex items-center gap-1 px-2 py-1.5 sm:px-2.5 sm:py-1.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500 text-emerald-600 hover:text-white dark:bg-emerald-500/20 dark:hover:bg-emerald-500 dark:text-emerald-300 dark:hover:text-white text-xs font-bold transition-all cursor-pointer">
+        <button type="button" id="header-invite-btn" title="Share invite link" aria-label="Share invite link" class="nav-btn w-8 h-8 sm:w-auto sm:h-8 sm:px-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500 text-emerald-600 hover:text-white dark:bg-emerald-500/20 dark:hover:bg-emerald-500 dark:text-emerald-300 dark:hover:text-white text-xs font-bold">
           <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
           </svg>
-          <span class="hidden md:inline">Invite</span>
+          <span class="hidden sm:inline sm:ml-1">Invite</span>
         </button>
 
-        <!-- Room Code Pill (Responsive) -->
-        <button type="button" id="header-code-pill" title="Click to copy room code" aria-label="Copy room code" class="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 transition-all border border-slate-200/60 dark:border-slate-700 cursor-pointer">
+        <!-- Room Code Pill (Shows on tablet/desktop) -->
+        <button type="button" id="header-code-pill" title="Click to copy room code" aria-label="Copy room code" class="nav-btn hidden md:flex items-center gap-1 px-2.5 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700">
           <span class="text-slate-400 dark:text-slate-500 text-[10px]">ROOM:</span>
           <span id="header-room-code" class="text-emerald-500 font-extrabold">------</span>
         </button>
 
         <!-- Clear Chat Button -->
-        <button type="button" id="btn-clear-chat" title="Clear Local Chat" aria-label="Clear Local Chat" class="p-1.5 sm:p-2 text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer">
-          <svg class="w-4 h-4 sm:w-5 sm:h-5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <button type="button" id="btn-clear-chat" title="Clear Local Chat" aria-label="Clear Local Chat" class="nav-btn w-8 h-8 rounded-xl text-slate-500 dark:text-slate-400 hover:text-red-500 dark:hover:text-red-400 hover:bg-slate-100 dark:hover:bg-slate-800">
+          <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
           </svg>
         </button>
 
         <!-- Theme Toggle Button -->
-        <button type="button" id="btn-theme-toggle" title="Toggle Theme" aria-label="Toggle Dark/Light Theme" class="p-1.5 sm:p-2 text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition-all cursor-pointer">
+        <button type="button" id="btn-theme-toggle" title="Toggle Theme" aria-label="Toggle Dark/Light Theme" class="nav-btn w-8 h-8 rounded-xl text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800">
           <!-- Sun icon (Dark mode active) -->
-          <svg id="icon-sun" class="w-4 h-4 sm:w-5 sm:h-5 hidden dark:block text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg id="icon-sun" class="w-4 h-4 hidden dark:block text-amber-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
           </svg>
           <!-- Moon icon (Light mode active) -->
-          <svg id="icon-moon" class="w-4 h-4 sm:w-5 sm:h-5 block dark:hidden text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg id="icon-moon" class="w-4 h-4 block dark:hidden text-slate-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"/>
           </svg>
         </button>
 
         <!-- Leave Chat Button -->
-        <button type="button" id="btn-leave-chat" aria-label="Leave Chat" class="flex items-center gap-1 sm:gap-1.5 px-2 py-1.5 sm:px-3 sm:py-1.5 bg-red-500/10 hover:bg-red-500 text-red-600 hover:text-white rounded-xl text-xs font-bold transition-all cursor-pointer">
+        <button type="button" id="btn-leave-chat" aria-label="Leave Chat" class="nav-btn w-8 h-8 sm:w-auto sm:h-8 sm:px-2.5 rounded-xl bg-red-500/10 hover:bg-red-500 text-red-600 hover:text-white text-xs font-bold">
           <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
           </svg>
-          <span class="hidden sm:inline">Leave</span>
+          <span class="hidden sm:inline sm:ml-1">Leave</span>
         </button>
       </div>
     </header>
@@ -316,7 +316,7 @@
       </span>
     </div>
 
-    <!-- Input Footer Bar -->
+    <!-- Input Footer Bar with Safe-Area Padding -->
     <footer class="p-2.5 sm:p-3.5 bg-white/95 dark:bg-slate-900/95 border-t border-slate-200/80 dark:border-slate-800 backdrop-blur-md relative z-20">
       
       <!-- Emoji Picker Popup -->
@@ -357,11 +357,11 @@
           autocomplete="off"
           autocorrect="on"
           capitalize="sentences"
-          class="flex-1 py-2.5 sm:py-3 px-4 sm:px-5 bg-white dark:bg-[#2a3942] text-slate-900 dark:text-slate-100 rounded-full border border-slate-200/80 dark:border-slate-700/60 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-base sm:text-sm shadow-sm transition-all min-w-0"
+          class="flex-1 py-2 sm:py-2.5 px-4 sm:px-5 bg-white dark:bg-[#2a3942] text-slate-900 dark:text-slate-100 rounded-full border border-slate-200/80 dark:border-slate-700/60 focus:outline-none focus:ring-2 focus:ring-emerald-500 text-base sm:text-sm shadow-xs transition-all min-w-0"
         />
 
         <!-- Send Button -->
-        <button type="submit" id="btn-send-message" title="Send Message" aria-label="Send Message" class="w-10 h-10 sm:w-11 sm:h-11 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center cursor-pointer shrink-0">
+        <button type="submit" id="btn-send-message" title="Send Message" aria-label="Send Message" class="w-9 h-9 sm:w-10 sm:h-10 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white rounded-full shadow-md hover:shadow-lg transition-all flex items-center justify-center cursor-pointer shrink-0">
           <svg class="w-5 h-5 translate-x-0.5" fill="currentColor" viewBox="0 0 24 24">
             <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
           </svg>
@@ -372,7 +372,7 @@
   </div>
 
   <!-- High-Performance Local PeerJS Script (with CDN fallback) -->
-  <script src="js/peerjs.min.js"></script>
+  <script src="/js/peerjs.min.js"></script>
   <script>
     if (typeof Peer === 'undefined') {
       var cdnScript = document.createElement('script');
@@ -382,6 +382,6 @@
   </script>
 
   <!-- Main Application Script -->
-  <script src="js/app.js" defer></script>
+  <script src="/js/app.js" defer></script>
 </body>
 </html>

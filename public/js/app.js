@@ -253,7 +253,7 @@ document.addEventListener('DOMContentLoaded', () => {
       } else if (names.length === 2) {
         statusText.textContent = `${names[0]}, ${names[1]} online`;
       } else if (names.length > 2) {
-        statusText.textContent = `${names[0]}, ${names[1]} & ${names.length - 2} more`;
+        statusText.textContent = `${names[0]}, ${names[1]} +${names.length - 2} more`;
       }
       statusText.className = 'text-[10px] sm:text-xs text-wa-green font-medium truncate';
       startHeartbeat();
@@ -317,6 +317,7 @@ document.addEventListener('DOMContentLoaded', () => {
     currentRoomCode = code;
     if (homeView) homeView.classList.add('hidden');
     if (chatView) chatView.classList.remove('hidden');
+    if (headerGroupTitle) headerGroupTitle.textContent = `Group #${code}`;
     if (headerRoomCode) headerRoomCode.textContent = code;
     if (headerCodePill) headerCodePill.classList.remove('hidden');
     if (messageInput) messageInput.focus();
@@ -1000,6 +1001,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (membersModal) membersModal.classList.add('hidden');
     if (chatView) chatView.classList.add('hidden');
     if (homeView) homeView.classList.remove('hidden');
+    if (headerGroupTitle) headerGroupTitle.textContent = 'Group Chat';
     if (createActions) createActions.classList.add('hidden');
     if (btnGenerateCode) btnGenerateCode.classList.remove('hidden');
     if (createdCodeDisplay) createdCodeDisplay.textContent = '------';
