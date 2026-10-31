@@ -1,10 +1,10 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@600;800&display=swap');
 
 :root {
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', monospace;
 
-  /* Primary Brand Gradients & Colors */
+  /* Primary Brand Colors */
   --color-primary: #10b981;
   --color-primary-dark: #059669;
   --color-accent: #06b6d4;
@@ -12,15 +12,7 @@
 
   /* Theme Backgrounds */
   --bg-light: #f8fafc;
-  --bg-dark: #0b0f19;
-
-  --panel-light: #ffffff;
-  --panel-dark: #131b2e;
-
-  --bubble-out-light: #d1fae5;
-  --bubble-out-dark: #064e3b;
-  --bubble-in-light: #ffffff;
-  --bubble-in-dark: #1e293b;
+  --bg-dark: #080c14;
 }
 
 .bg-wa-green {
@@ -81,11 +73,19 @@ html, body {
   flex-direction: column;
 }
 
-#chat-messages > :first-child {
-  margin-top: auto !important;
+/* 
+ * Modern Flexbox Chat Spacer:
+ * Absorbs empty vertical height when there are few messages (bottom pinning),
+ * but collapses to 0 when overflowing so user can freely scroll to the top!
+ */
+#chat-messages::before {
+  content: "";
+  display: block;
+  flex: 1 1 auto;
+  min-height: 8px;
 }
 
-/* Chat Background Mesh Pattern */
+/* Chat Background Pattern */
 .wa-chat-bg {
   background-color: #efeae2;
   background-image: radial-gradient(#d1c7b7 1.2px, transparent 1.2px);
@@ -101,22 +101,10 @@ html, body {
 /* Chat Message Bubbles */
 .bubble {
   position: relative;
-  max-width: 88%;
   word-break: break-word;
-  box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-  animation: bubble-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) ease-out;
-}
-
-@media (min-width: 640px) {
-  .bubble {
-    max-width: 75%;
-  }
-}
-
-@media (min-width: 1024px) {
-  .bubble {
-    max-width: 65%;
-  }
+  overflow-wrap: anywhere;
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.08);
+  animation: bubble-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) ease-out;
 }
 
 @keyframes bubble-in {
@@ -133,58 +121,27 @@ html, body {
 .bubble-out {
   background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: #ffffff;
-  border-top-right-radius: 2px !important;
+  border-top-right-radius: 4px !important;
 }
 
 .dark .bubble-out {
   background: linear-gradient(135deg, #059669 0%, #047857 100%);
   color: #f8fafc;
-  border-top-right-radius: 2px !important;
+  border-top-right-radius: 4px !important;
 }
 
 .bubble-in {
   background-color: #ffffff;
   color: #0f172a;
-  border-top-left-radius: 2px !important;
+  border-top-left-radius: 4px !important;
   border: 1px solid rgba(226, 232, 240, 0.8);
 }
 
 .dark .bubble-in {
   background-color: #1e293b;
   color: #f1f5f9;
-  border-top-left-radius: 2px !important;
+  border-top-left-radius: 4px !important;
   border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-/* Tail styling */
-.bubble-out::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  right: -6px;
-  width: 0;
-  height: 0;
-  border-top: 6px solid #059669;
-  border-right: 6px solid transparent;
-}
-
-.dark .bubble-out::before {
-  border-top-color: #047857;
-}
-
-.bubble-in::before {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: -6px;
-  width: 0;
-  height: 0;
-  border-top: 6px solid #ffffff;
-  border-left: 6px solid transparent;
-}
-
-.dark .bubble-in::before {
-  border-top-color: #1e293b;
 }
 
 /* Status Pulse Animation */
@@ -195,7 +152,7 @@ html, body {
   }
   70% {
     transform: scale(1);
-    box-shadow: 0 0 0 8px rgba(16, 185, 129, 0);
+    box-shadow: 0 0 0 7px rgba(16, 185, 129, 0);
   }
   100% {
     transform: scale(0.95);
@@ -227,20 +184,7 @@ html, body {
   }
 }
 
-/* Glassmorphic Aesthetic Cards */
-.glass-card {
-  background: rgba(255, 255, 255, 0.88);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-}
-
-.dark .glass-card {
-  background: rgba(15, 23, 42, 0.88);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-}
-
-/* Glow accent */
+/* Glow accents */
 .glow-primary {
   box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.4);
 }

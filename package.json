@@ -1,19 +1,23 @@
 {
   "name": "chatling-app",
   "version": "1.0.0",
-  "description": "Ephemeral 1-to-1 real-time web chat app",
-  "main": "index.html",
+  "description": "Private Ephemeral Group & 1-to-1 Web Chat",
+  "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5"
   },
   "keywords": [
     "chatling",
     "chat",
     "webrtc",
     "ephemeral",
-    "realtime"
+    "realtime",
+    "group-chat"
   ],
-  "author": "",
   "license": "MIT"
 }
