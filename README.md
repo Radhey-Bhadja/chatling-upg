@@ -1,44 +1,51 @@
-# Chatling - Private Ephemeral Group & 1-to-1 Web Chat
+# Chatling - Private Ephemeral Group Web Chat (WebRTC)
 
-A secure, high-performance, ephemeral group web chat application built for instant communication with **multiple participants**. Operates entirely peer-to-peer via WebRTC (PeerJS) with **zero database** and **zero server storage**.
-
----
-
-## Key Features
-
-- 👥 **Multi-User Full Mesh Group Chat**: Seamless real-time conversation between multiple friends simultaneously.
-- 🔒 **Zero Database & Ephemeral Security**: Messages flow directly between users' browsers encrypted over WebRTC DataChannels. Nothing is stored on any server or database. Once you leave, the chat is cleared immediately.
-- 🔑 **6-Digit Room Codes & Instant Links**: Generate a room with 1-click. Share the 6-digit code or direct link (`?room=123456`) with group members for instant join.
-- 🏷️ **Dynamic Sender Initial Avatars & Colors**: Each group participant is automatically assigned an identifiable avatar initial and WhatsApp-style colored name tag.
-- 📱 **Mobile Responsive Layout & Non-Wrapping Navigation**: Compact, uniform action buttons (`Invite`, `Clear Chat`, `Theme`, `Leave`) guaranteed never to wrap or squish title/status areas on screens from 320px up to 4K desktops.
-- ✍️ **Multi-User Live Typing Indicators**: Real-time feedback showing exactly who is typing (e.g. `Alex and Sam are typing`).
-- 👥 **Group Members Flyout Modal**: Tap the group header to inspect all participants currently online.
-- 🎨 **WhatsApp Aesthetic & Instant Dark/Light Theme**: WhatsApp bubble aesthetics, delivered ticks, dynamic flex scroll spacer, and theme toggle with system preference auto-detection.
-- ⚡ **100% Serverless & CDN-Ready**: Static architecture deploys in seconds to Vercel, GitHub Pages, Netlify, or Cloudflare Pages without backend costs.
+A private, ephemeral group web chat application built for instant communication using **WebRTC DataChannels** by 6-digit room codes. Messages and events flow directly peer-to-peer across users' browsers with **zero database** and **zero server storage**.
 
 ---
 
-## Deployment to Vercel
+## 🚀 Quick Start
 
-Because Chatling runs peer-to-peer via WebRTC, it deploys as a **100% static web application**:
+### Option 1: One-Click Launch (Windows)
+Double-click `start.bat`. 
+It will verify Node.js, install dependencies if missing, start the local server, and **automatically open the app in your default browser** (`http://localhost:3000`).
 
-1. Push this repository to GitHub.
-2. In your [Vercel Dashboard](https://vercel.com/dashboard), import your repository.
-3. Settings:
-   - **Framework Preset**: `Other`
-   - **Build Command**: `npm run build` (or leave default)
-   - **Output Directory**: `public` (or leave default)
-4. Click **Deploy**. Vercel will build and serve your static web app in seconds.
-
----
-
-## Local Development & Optional Server
-
-To run locally with the optional Express server:
-
+### Option 2: Command Line
 ```bash
-# Double-click start.bat or run:
+npm start
+```
+Or:
+```bash
 node server/server.js
 ```
+The server will start and automatically launch `http://localhost:3000`.
 
-Then open `http://localhost:3000` in your browser.
+---
+
+## 👥 How to Test Group Chat Locally
+
+1. Start the app using `start.bat` or `npm start`.
+2. In the first browser tab:
+   - Enter your nickname (e.g. `Alice`).
+   - Click **Generate Group Room**. A 6-digit room code will appear (e.g. `582914`).
+   - Click **Enter Group Chat**.
+3. Open a **second tab** (or an incognito window / another browser):
+   - Enter another nickname (e.g. `Bob`).
+   - Click the **Join Group** tab.
+   - Enter the 6-digit code `582914` (or paste the direct invite link).
+   - Click **Join Group Chat**.
+4. Both peers will instantly negotiate a direct WebRTC connection:
+   - Group status lights up green (**Online**).
+   - Messages, live typing indicators, delivery ticks, and emoji reactions transmit peer-to-peer over **WebRTC DataChannels**.
+   - You can open 3, 4, or more tabs to experience the full mesh group conversation!
+
+---
+
+## 🔑 Key Features
+
+- 👥 **Multi-User Full Mesh WebRTC Group**: Real-time communication directly between participants with no intermediary database.
+- 🔒 **Zero Server Storage & Ephemeral**: All messages travel directly across WebRTC `RTCDataChannel`. Leaving the chat room immediately destroys and clears the local history.
+- 🔢 **6-Digit Room Codes & Instant Links**: Generate a room code with one click, or share the direct link (`?room=123456`) to join immediately.
+- ✍️ **Multi-User Live Typing Indicators**: Real-time indicator showing which participants are actively typing.
+- 🎨 **WhatsApp Aesthetic & Theme Toggle**: WhatsApp-style bubble design, sender color tagging, delivery checkmarks, and dark/light mode toggle with system preference auto-detection.
+- 📴 **100% Offline-Capable Local Signaling**: Socket.IO client is bundled locally (`js/socket.io.min.js`) so the app works on local offline networks, LAN, or Wi-Fi without depending on external cloud servers.

@@ -12,7 +12,7 @@
     (function() {
       try {
         const theme = localStorage.getItem('chatling_theme');
-        if (theme === 'dark' || (!theme && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+        if (theme === 'dark') {
           document.documentElement.classList.add('dark');
           document.documentElement.classList.remove('light');
         } else {
@@ -379,7 +379,8 @@
 
   </div>
 
-  <!-- PeerJS WebRTC Library (Local with Non-Blocking CDN Fallback) -->
+  <!-- WebRTC Signaling & Peer Libraries (Local with Failover) -->
+  <script src="js/socket.io.min.js" onerror="this.onerror=null;this.src='/socket.io/socket.io.js'"></script>
   <script src="js/peerjs.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'"></script>
 
   <!-- Main Application Script -->

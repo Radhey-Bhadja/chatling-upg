@@ -1,73 +1,56 @@
 // Chatling - Private Ephemeral Group Web Chat Engine
-// Full Multi-User Group Architecture with Hub-and-Spoke Relay Coordination
+// WebRTC DataChannel Full-Mesh Architecture with Automatic Signaling & Failover
+// Clean Light Theme Default (WhatsApp Emerald/Light Aesthetic)
 
 document.addEventListener('DOMContentLoaded', () => {
-  // WebRTC ICE Server Configuration for Live HTTPS / Mobile Carrier Traversal (STUN + TURN Fallback)
-  const PEER_CONFIG = {
-    config: {
-      iceServers: [
-        { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' },
-        { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
-        { urls: 'stun:stun4.l.google.com:19302' },
-        { urls: 'stun:global.stun.twilio.com:3478' },
-        // OpenRelay Public TURN Server fallback for symmetric NAT / strict mobile cellular firewalls
-        {
-          urls: 'turn:openrelay.metered.ca:80',
-          username: 'openrelay',
-          credential: 'openrelay'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443',
-          username: 'openrelay',
-          credential: 'openrelay'
-        },
-        {
-          urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-          username: 'openrelay',
-          credential: 'openrelay'
-        }
-      ]
-    },
-    debug: 0
+  // WebRTC ICE Servers Configuration (Google STUN for NAT & LAN Traversal)
+  const RTC_CONFIG = {
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      { urls: 'stun:stun3.l.google.com:19302' },
+      { urls: 'stun:stun4.l.google.com:19302' },
+      { urls: 'stun:global.stun.twilio.com:3478' }
+    ]
   };
 
-  // State Management for Multi-User Group Chat
-  let peer = null;
+  // State
+  let socket = null;
   let myPeerId = null;
   let myNickname = '';
   let isHost = false;
   let currentRoomCode = null;
-  let hostConn = null; // Used by members to communicate with the host
 
-  // Host tracks connected members: Map<peerId, { conn, nickname, isHost }>
-  const connectedPeers = new Map();
+  // Active WebRTC Mesh: Map<peerId, { pc: RTCPeerConnection, dc: RTCDataChannel, nickname: string, dcOpen: boolean }>
+  const peers = new Map();
 
-  // Canonical group roster: Array<{ id: string, name: string, isHost: boolean }>
+  // Queued ICE candidates prior to setRemoteDescription: Map<peerId, RTCIceCandidateInit[]>
+  const iceCandidateQueues = new Map();
+
+  // Group Roster: Array<{ id: string, name: string, isHost: boolean }>
   let groupRoster = [];
 
-  // Deduplication set for message IDs
+  // Message deduplication
   const seenMessageIds = new Set();
 
-  // Typing indicators: Map<senderId, { nickname: string, timer: any }>
+  // Typing state: Map<peerId, { nickname: string, timer: any }>
   const activeTypers = new Map();
-
   let typingTimeout = null;
   let isTyping = false;
   let heartbeatInterval = null;
 
-  // Color palette for group participant names (WhatsApp style)
+  // WhatsApp-style Participant Colors
   const NAME_COLORS = [
-    '#25D366', // WA Emerald
+    '#10b981', // Emerald
     '#0284c7', // Sky Blue
-    '#8b5cf6', // Purple
+    '#8b5cf6', // Violet
     '#f59e0b', // Amber
     '#ec4899', // Pink
-    '#14b8a6', // Teal
-    '#f97316', // Orange
-    '#6366f1', // Indigo
-    '#ef4444'  // Coral Red
+    '#0d9488', // Teal
+    '#ea580c', // Orange
+    '#4f46e5', // Indigo
+    '#e11d48'  // Rose
   ];
 
   function getSenderColor(nameOrId) {
@@ -76,8 +59,8 @@ document.addEventListener('DOMContentLoaded', () => {
     for (let i = 0; i < nameOrId.length; i++) {
       hash = nameOrId.charCodeAt(i) + ((hash << 5) - hash);
     }
-    const index = Math.abs(hash) % NAME_COLORS.length;
-    return NAME_COLORS[index];
+    const idx = Math.abs(hash) % NAME_COLORS.length;
+    return NAME_COLORS[idx];
   }
 
   // DOM Elements - Home View
@@ -118,7 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnSendMessage = document.getElementById('btn-send-message');
   const messageForm = document.getElementById('message-form');
 
-  // Modal Elements
+  // DOM Elements - Members Modal
   const membersModal = document.getElementById('members-modal');
   const btnCloseMembers = document.getElementById('btn-close-members');
   const membersList = document.getElementById('members-list');
@@ -127,13 +110,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnModalCopyCode = document.getElementById('btn-modal-copy-code');
   const btnModalInvite = document.getElementById('btn-modal-invite');
 
-  // Notification Elements
+  // DOM Elements - Toast & Notifications
   const toastContainer = document.getElementById('toast-container');
   const connectionBanner = document.getElementById('connection-banner');
   const iconSun = document.getElementById('icon-sun');
   const iconMoon = document.getElementById('icon-moon');
 
-  // --- THEME MANAGEMENT & PERSISTENCE ---
+  // --- THEME MANAGEMENT (DEFAULTS TO LIGHT THEME) ---
   function updateThemeUI(isDark) {
     if (isDark) {
       document.documentElement.classList.add('dark');
@@ -148,9 +131,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Force Light Theme default unless user explicitly chose dark
   const savedTheme = localStorage.getItem('chatling_theme');
-  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-  const isDarkMode = savedTheme ? savedTheme === 'dark' : prefersDark;
+  const isDarkMode = savedTheme === 'dark'; // Strict light default
   updateThemeUI(isDarkMode);
 
   if (btnThemeToggle) {
@@ -162,15 +145,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --- AUDIO FEEDBACK (Synthesized Chime) ---
+  // --- AUDIO FEEDBACK (Synthesizer Chime) ---
   function playNotificationSound() {
     try {
-      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-      if (!AudioContextClass) return;
-      const ctx = new AudioContextClass();
-      if (ctx.state === 'suspended') {
-        ctx.resume();
-      }
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (!AudioCtx) return;
+      const ctx = new AudioCtx();
+      if (ctx.state === 'suspended') ctx.resume();
+
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
@@ -187,8 +169,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // --- HELPERS ---
   function getEffectiveNickname() {
-    const inputVal = userNicknameInput ? userNicknameInput.value.trim() : '';
-    if (inputVal) return inputVal.slice(0, 20);
+    const val = userNicknameInput ? userNicknameInput.value.trim() : '';
+    if (val) return val.slice(0, 20);
     return `User ${Math.floor(1000 + Math.random() * 9000)}`;
   }
 
@@ -241,6 +223,32 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  function escapeHTML(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function formatTime(isoString) {
+    const d = isoString ? new Date(isoString) : new Date();
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function scrollToBottom(behavior = 'smooth') {
+    if (!chatMessages) return;
+    requestAnimationFrame(() => {
+      chatMessages.scrollTo({
+        top: chatMessages.scrollHeight,
+        behavior: behavior
+      });
+    });
+  }
+
+  // --- UI STATUS & ROSTER ---
   function updateGroupStatus() {
     const totalCount = groupRoster.length > 0 ? groupRoster.length : 1;
     if (badgeMemberCount) badgeMemberCount.textContent = totalCount;
@@ -273,7 +281,6 @@ document.addEventListener('DOMContentLoaded', () => {
     membersList.innerHTML = '';
 
     if (groupRoster.length === 0) {
-      // Fallback single member
       const li = document.createElement('li');
       li.className = 'flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800';
       li.innerHTML = `
@@ -329,7 +336,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (messageInput) messageInput.focus();
     updateGroupStatus();
 
-    // Push browser history state
     if (window.history && window.history.pushState) {
       window.history.pushState({ inChat: true, room: code }, '', `?room=${code}`);
     }
@@ -343,67 +349,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  function startHeartbeat() {
-    stopHeartbeat();
-    heartbeatInterval = setInterval(() => {
-      if (isHost) {
-        broadcastToGroup({ type: 'ping' });
-      } else if (hostConn && hostConn.open) {
-        try { hostConn.send({ type: 'ping' }); } catch (e) {}
-      }
-    }, 15000);
-  }
-
-  function stopHeartbeat() {
-    if (heartbeatInterval) {
-      clearInterval(heartbeatInterval);
-      heartbeatInterval = null;
-    }
-  }
-
-  function scrollToBottom(behavior = 'smooth') {
-    if (!chatMessages) return;
-    requestAnimationFrame(() => {
-      chatMessages.scrollTo({
-        top: chatMessages.scrollHeight,
-        behavior: behavior
-      });
-    });
-  }
-
-  function escapeHTML(str) {
-    if (!str) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
-
-  function formatTime(isoString) {
-    const date = isoString ? new Date(isoString) : new Date();
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-
-  // Broadcast a message to all connected members (Host Role)
-  function broadcastToGroup(payload, excludePeerId = null) {
-    connectedPeers.forEach((peerData, peerId) => {
-      if (peerId !== excludePeerId && peerData.conn && peerData.conn.open) {
-        try {
-          peerData.conn.send(payload);
-        } catch (e) {
-          console.warn(`[BROADCAST] Failed to send to ${peerId}:`, e);
-        }
-      }
-    });
-  }
-
-  // Append a chat bubble
+  // --- MESSAGE BUBBLES ---
   function appendMessage({ id, senderName, senderId, content, isOutgoing, timestamp, status = 'sent' }) {
     if (!chatMessages) return;
-    
-    // Check if message is already rendered
     if (document.getElementById(`msg-wrap-${id}`)) return;
 
     const wrapper = document.createElement('div');
@@ -422,7 +370,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (isOutgoing) {
-      // Outgoing Message (Right Aligned, Green Gradient)
       wrapper.className = 'flex items-end justify-end my-1.5 w-full';
       wrapper.innerHTML = `
         <div class="bubble bubble-out py-2 px-3 sm:px-3.5 rounded-2xl rounded-br-xs text-xs sm:text-sm max-w-[85%] sm:max-w-[70%] shadow-xs">
@@ -434,7 +381,6 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       `;
     } else {
-      // Incoming Group Message (Left Aligned with Sender Avatar & WhatsApp Color Tag)
       const name = senderName || 'Member';
       const nameColor = getSenderColor(name);
       const initial = escapeHTML(name.charAt(0).toUpperCase());
@@ -503,208 +449,364 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function setupPeerErrorHandlers(p) {
-    p.on('error', (err) => {
-      console.warn('[PEER ERROR]', err);
-      if (err.type === 'peer-unavailable') {
-        showToast('Group room host is offline or code is invalid.', 'error');
-      } else if (err.type === 'unavailable-id') {
-        showToast('Room code collision. Re-generating...', 'info');
-      } else {
-        showToast(`Notice: ${err.type || 'Connection alert'}`, 'info');
+  // --- WEBRTC CORE (GLARE-FREE PEER NEGOTIATION) ---
+
+  // Connect to local signaling server
+  function connectSignalingServer() {
+    if (socket && socket.connected) return Promise.resolve(socket);
+
+    return new Promise((resolve, reject) => {
+      if (typeof io === 'undefined') {
+        reject(new Error('Socket.IO client library is not loaded. Ensure local server is running.'));
+        return;
       }
+
+      socket = io(window.location.origin, {
+        reconnection: true,
+        reconnectionAttempts: 10,
+        reconnectionDelay: 1000,
+        timeout: 10000
+      });
+
+      socket.on('connect', () => {
+        myPeerId = socket.id;
+        console.log('[SIGNALING] Connected with ID:', myPeerId);
+        resolve(socket);
+      });
+
+      socket.on('connect_error', (err) => {
+        console.warn('[SIGNALING] Connection error:', err.message);
+      });
+
+      // Forwarded WebRTC Signals (Offer, Answer, Candidate)
+      socket.on('signal', handleRemoteSignal);
+
+      // Other peer leaves
+      socket.on('user-left', ({ peerId, nickname, roster }) => {
+        handlePeerDeparture(peerId, nickname, roster);
+      });
+
+      // Socket Fallback Messages (in case WebRTC DataChannel is restricted)
+      socket.on('relay-message', (data) => {
+        handleIncomingChatMessage(data);
+      });
+
+      socket.on('relay-typing', (data) => {
+        handleIncomingTyping(data);
+      });
     });
   }
 
-  // --- HOME EVENT LISTENERS ---
-  if (tabCreate) tabCreate.addEventListener('click', () => switchHomeTab('create'));
-  if (tabJoin) tabJoin.addEventListener('click', () => switchHomeTab('join'));
+  // Create an RTCPeerConnection for a remote peer
+  function getOrCreatePeer(remotePeerId, remoteNickname) {
+    if (peers.has(remotePeerId)) {
+      return peers.get(remotePeerId);
+    }
 
-  // --- ROOM CREATION (HOST ROLE) ---
-  function createRoomSession(retryCount = 0) {
-    if (retryCount > 4) {
-      showToast('Could not allocate available room. Please try again.', 'error');
+    const pc = new RTCPeerConnection(RTC_CONFIG);
+    const peerData = {
+      pc,
+      dc: null,
+      nickname: remoteNickname || 'Member',
+      dcOpen: false
+    };
+
+    peers.set(remotePeerId, peerData);
+    if (!iceCandidateQueues.has(remotePeerId)) {
+      iceCandidateQueues.set(remotePeerId, []);
+    }
+
+    // ICE Candidate event
+    pc.onicecandidate = (event) => {
+      if (event.candidate && socket && socket.connected) {
+        socket.emit('signal', {
+          to: remotePeerId,
+          signal: {
+            type: 'candidate',
+            candidate: event.candidate
+          }
+        });
+      }
+    };
+
+    // Connection State Change
+    pc.onconnectionstatechange = () => {
+      console.log(`[WebRTC] Peer ${remotePeerId} state:`, pc.connectionState);
+      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
+        handlePeerDeparture(remotePeerId, peerData.nickname);
+      }
+    };
+
+    return peerData;
+  }
+
+  // Setup RTCDataChannel events
+  function setupDataChannel(remotePeerId, dc) {
+    dc.onopen = () => {
+      console.log(`[WebRTC DC] DataChannel OPEN with ${remotePeerId}`);
+      const peerData = peers.get(remotePeerId);
+      if (peerData) {
+        peerData.dcOpen = true;
+      }
+
+      // Send handshake
+      try {
+        dc.send(JSON.stringify({
+          type: 'handshake',
+          senderId: myPeerId,
+          nickname: myNickname,
+          isHost: isHost
+        }));
+      } catch (e) {}
+
+      updateGroupStatus();
+    };
+
+    dc.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        handleDataChannelPayload(remotePeerId, data);
+      } catch (e) {
+        console.warn('[WebRTC DC] Failed to parse message:', e);
+      }
+    };
+
+    dc.onclose = () => {
+      console.log(`[WebRTC DC] DataChannel CLOSED with ${remotePeerId}`);
+      const peerData = peers.get(remotePeerId);
+      if (peerData) {
+        peerData.dcOpen = false;
+      }
+    };
+
+    dc.onerror = (err) => {
+      console.warn(`[WebRTC DC] Error with ${remotePeerId}:`, err);
+    };
+  }
+
+  // Drain queued ICE candidates once remoteDescription is set
+  async function drainIceCandidates(remotePeerId, pc) {
+    const queue = iceCandidateQueues.get(remotePeerId) || [];
+    while (queue.length > 0) {
+      const candidate = queue.shift();
+      try {
+        await pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } catch (e) {
+        console.warn('[WebRTC] Error adding queued candidate:', e);
+      }
+    }
+  }
+
+  // INITIATOR: Joiner initiates WebRTC connection with an existing peer
+  async function initiatePeerConnection(remotePeerId, remoteNickname) {
+    console.log(`[WebRTC] Initiating offer to existing peer: ${remoteNickname} (${remotePeerId})`);
+    const peerData = getOrCreatePeer(remotePeerId, remoteNickname);
+    const pc = peerData.pc;
+
+    // Create reliable ordered DataChannel
+    const dc = pc.createDataChannel('chatling', { ordered: true });
+    peerData.dc = dc;
+    setupDataChannel(remotePeerId, dc);
+
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+
+      if (socket && socket.connected) {
+        socket.emit('signal', {
+          to: remotePeerId,
+          signal: {
+            type: 'offer',
+            sdp: pc.localDescription
+          }
+        });
+      }
+    } catch (err) {
+      console.error('[WebRTC] Error creating offer:', err);
+    }
+  }
+
+  // RECEIVER: Handle incoming signaling messages
+  async function handleRemoteSignal({ from, signal }) {
+    if (!signal) return;
+
+    try {
+      // 1. Incoming Offer (We are the receiver)
+      if (signal.type === 'offer') {
+        console.log(`[WebRTC] Received offer from ${from}`);
+        const peerData = getOrCreatePeer(from, 'Member');
+        const pc = peerData.pc;
+
+        // Listen for remote DataChannel
+        pc.ondatachannel = (e) => {
+          peerData.dc = e.channel;
+          setupDataChannel(from, e.channel);
+        };
+
+        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+        await drainIceCandidates(from, pc);
+
+        const answer = await pc.createAnswer();
+        await pc.setLocalDescription(answer);
+
+        if (socket && socket.connected) {
+          socket.emit('signal', {
+            to: from,
+            signal: {
+              type: 'answer',
+              sdp: pc.localDescription
+            }
+          });
+        }
+      }
+      // 2. Incoming Answer (We were the initiator)
+      else if (signal.type === 'answer') {
+        console.log(`[WebRTC] Received answer from ${from}`);
+        const peerData = peers.get(from);
+        if (peerData && peerData.pc) {
+          await peerData.pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+          await drainIceCandidates(from, peerData.pc);
+        }
+      }
+      // 3. Incoming ICE Candidate
+      else if (signal.type === 'candidate' && signal.candidate) {
+        const peerData = peers.get(from);
+        if (peerData && peerData.pc && peerData.pc.remoteDescription) {
+          try {
+            await peerData.pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+          } catch (e) {
+            console.warn('[WebRTC] Candidate error:', e);
+          }
+        } else {
+          // Queue until setRemoteDescription completes
+          const queue = iceCandidateQueues.get(from) || [];
+          queue.push(signal.candidate);
+          iceCandidateQueues.set(from, queue);
+        }
+      }
+    } catch (err) {
+      console.error('[WebRTC] handleRemoteSignal error:', err);
+    }
+  }
+
+  // --- DATACHANNEL MESSAGES ---
+  function handleDataChannelPayload(senderPeerId, data) {
+    if (!data || !data.type) return;
+
+    if (data.type === 'handshake') {
+      const peerData = peers.get(senderPeerId);
+      if (peerData) peerData.nickname = data.nickname || 'Member';
+
+      if (!groupRoster.some(m => m.id === senderPeerId)) {
+        groupRoster.push({
+          id: senderPeerId,
+          name: data.nickname || 'Member',
+          isHost: !!data.isHost
+        });
+      }
+
+      showToast(`${data.nickname || 'Participant'} joined via WebRTC!`, 'success');
+      appendSystemBanner(`${data.nickname || 'A participant'} joined the group`);
+      updateGroupStatus();
+      playNotificationSound();
       return;
     }
 
-    myNickname = getEffectiveNickname();
-    isHost = true;
-
-    // Random 6-digit numeric room code
-    const roomCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const hostPeerId = `chatling-grp-${roomCode}`;
-
-    if (peer) {
-      try { peer.destroy(); } catch (e) {}
+    if (data.type === 'chat') {
+      handleIncomingChatMessage(data);
+      // Acknowledge delivery
+      const peerData = peers.get(senderPeerId);
+      if (peerData && peerData.dc && peerData.dc.readyState === 'open') {
+        try { peerData.dc.send(JSON.stringify({ type: 'ack', id: data.id })); } catch (e) {}
+      }
+      return;
     }
 
-    peer = new Peer(hostPeerId, PEER_CONFIG);
-    setupPeerErrorHandlers(peer);
+    if (data.type === 'ack') {
+      markMessageDelivered(data.id);
+      return;
+    }
 
-    peer.on('error', (err) => {
-      if (err.type === 'unavailable-id') {
-        createRoomSession(retryCount + 1);
+    if (data.type === 'typing' || data.type === 'stop-typing') {
+      handleIncomingTyping(data);
+      return;
+    }
+
+    if (data.type === 'ping') {
+      const peerData = peers.get(senderPeerId);
+      if (peerData && peerData.dc && peerData.dc.readyState === 'open') {
+        try { peerData.dc.send(JSON.stringify({ type: 'pong' })); } catch (e) {}
       }
-    });
+      return;
+    }
 
-    peer.on('open', (id) => {
-      myPeerId = id;
-      currentRoomCode = roomCode;
-      groupRoster = [{ id: myPeerId, name: myNickname, isHost: true }];
-
-      if (createdCodeDisplay) createdCodeDisplay.textContent = roomCode;
-      if (createActions) createActions.classList.remove('hidden');
-      if (btnGenerateCode) btnGenerateCode.classList.add('hidden');
-      showToast(`Group Room ${roomCode} created!`, 'success');
-    });
-
-    // Accept incoming participants (Group Hub)
-    peer.on('connection', (conn) => {
-      const joinerPeerId = conn.peer;
-
-      conn.on('open', () => {
-        // Connection opened with a joiner
-      });
-
-      conn.on('data', (data) => {
-        if (!data) return;
-
-        if (data.type === 'ping') return;
-
-        // 1. Join Request from a new participant
-        if (data.type === 'join-request') {
-          const joinerName = (data.nickname || 'Member').slice(0, 20);
-          
-          // Add to connected peers map
-          connectedPeers.set(data.senderId, {
-            conn: conn,
-            nickname: joinerName,
-            isHost: false
-          });
-
-          // Update canonical roster (prevent duplicates)
-          groupRoster = groupRoster.filter(m => m.id !== data.senderId);
-          groupRoster.push({
-            id: data.senderId,
-            name: joinerName,
-            isHost: false
-          });
-
-          // Send approval and full roster back to the new joiner
-          try {
-            conn.send({
-              type: 'join-approved',
-              roomCode: currentRoomCode,
-              members: groupRoster,
-              hostName: myNickname
-            });
-          } catch (e) {}
-
-          // Broadcast member-joined to all other members
-          broadcastToGroup({
-            type: 'member-joined',
-            member: { id: data.senderId, name: joinerName },
-            members: groupRoster
-          }, data.senderId);
-
-          // Update Host UI
-          showToast(`${joinerName} joined the group!`, 'success');
-          appendSystemBanner(`${joinerName} joined the group`);
-          updateGroupStatus();
-          playNotificationSound();
-          return;
-        }
-
-        // 2. Incoming Group Message (Relay to all other members)
-        if (data.type === 'group-message') {
-          if (!seenMessageIds.has(data.id)) {
-            seenMessageIds.add(data.id);
-
-            // Display on Host's screen
-            appendMessage({
-              id: data.id,
-              senderName: data.senderName,
-              senderId: data.senderId,
-              content: data.content,
-              isOutgoing: false,
-              timestamp: data.timestamp
-            });
-
-            playNotificationSound();
-
-            // Relay message to ALL other group members
-            broadcastToGroup({
-              type: 'group-message',
-              id: data.id,
-              senderName: data.senderName,
-              senderId: data.senderId,
-              content: data.content,
-              timestamp: data.timestamp
-            }, data.senderId);
-
-            // Send delivery acknowledgment back to the sender
-            try {
-              conn.send({ type: 'msg-ack', id: data.id });
-            } catch (e) {}
-          }
-          return;
-        }
-
-        // 3. Typing Indicators (Relay to everyone)
-        if (data.type === 'typing') {
-          const name = data.nickname || 'Someone';
-          if (activeTypers.has(data.senderId)) {
-            clearTimeout(activeTypers.get(data.senderId).timer);
-          }
-          const timer = setTimeout(() => {
-            activeTypers.delete(data.senderId);
-            updateTypingDisplay();
-          }, 3500);
-
-          activeTypers.set(data.senderId, { nickname: name, timer });
-          updateTypingDisplay();
-
-          // Relay typing event to other members
-          broadcastToGroup(data, data.senderId);
-          return;
-        }
-
-        if (data.type === 'stop-typing') {
-          if (activeTypers.has(data.senderId)) {
-            clearTimeout(activeTypers.get(data.senderId).timer);
-            activeTypers.delete(data.senderId);
-          }
-          updateTypingDisplay();
-
-          // Relay stop-typing event to other members
-          broadcastToGroup(data, data.senderId);
-          return;
-        }
-
-        // 4. Member Voluntary Leave
-        if (data.type === 'member-leave') {
-          handleMemberDeparture(data.senderId, data.nickname);
-          return;
-        }
-      });
-
-      conn.on('close', () => {
-        handleMemberDeparture(joinerPeerId);
-      });
-
-      conn.on('error', (err) => {
-        console.warn(`[HOST] Conn error with ${joinerPeerId}:`, err);
-      });
-    });
+    if (data.type === 'leave') {
+      handlePeerDeparture(senderPeerId, data.nickname);
+      return;
+    }
   }
 
-  function handleMemberDeparture(peerId, explicitName = null) {
-    if (!connectedPeers.has(peerId)) return;
-    const peerData = connectedPeers.get(peerId);
+  function handleIncomingChatMessage(data) {
+    if (!data || !data.id) return;
+    if (seenMessageIds.has(data.id)) return;
+    seenMessageIds.add(data.id);
+
+    appendMessage({
+      id: data.id,
+      senderName: data.senderName,
+      senderId: data.senderId,
+      content: data.content,
+      isOutgoing: false,
+      timestamp: data.timestamp
+    });
+
+    playNotificationSound();
+  }
+
+  function handleIncomingTyping(data) {
+    if (!data || !data.senderId) return;
+
+    if (data.type === 'typing') {
+      const name = data.nickname || 'Someone';
+      if (activeTypers.has(data.senderId)) {
+        clearTimeout(activeTypers.get(data.senderId).timer);
+      }
+      const timer = setTimeout(() => {
+        activeTypers.delete(data.senderId);
+        updateTypingDisplay();
+      }, 3500);
+
+      activeTypers.set(data.senderId, { nickname: name, timer });
+      updateTypingDisplay();
+    } else if (data.type === 'stop-typing') {
+      if (activeTypers.has(data.senderId)) {
+        clearTimeout(activeTypers.get(data.senderId).timer);
+        activeTypers.delete(data.senderId);
+      }
+      updateTypingDisplay();
+    }
+  }
+
+  function handlePeerDeparture(peerId, explicitName = null, updatedRoster = null) {
+    if (!peers.has(peerId) && !groupRoster.some(m => m.id === peerId)) return;
+
+    const peerData = peers.get(peerId);
     const departedName = explicitName || (peerData ? peerData.nickname : 'A participant');
 
-    connectedPeers.delete(peerId);
-    groupRoster = groupRoster.filter(m => m.id !== peerId);
+    if (peerData) {
+      try {
+        if (peerData.dc) peerData.dc.close();
+        if (peerData.pc) peerData.pc.close();
+      } catch (e) {}
+      peers.delete(peerId);
+    }
+    iceCandidateQueues.delete(peerId);
+
+    if (updatedRoster && Array.isArray(updatedRoster)) {
+      groupRoster = updatedRoster.map(m => ({ id: m.id, name: m.nickname || m.name, isHost: m.isHost }));
+    } else {
+      groupRoster = groupRoster.filter(m => m.id !== peerId);
+    }
 
     if (activeTypers.has(peerId)) {
       clearTimeout(activeTypers.get(peerId).timer);
@@ -715,28 +817,95 @@ document.addEventListener('DOMContentLoaded', () => {
     updateGroupStatus();
     appendSystemBanner(`${departedName} left the group`);
     showToast(`${departedName} left the group.`, 'info');
-
-    // Broadcast departure to all remaining members
-    broadcastToGroup({
-      type: 'member-left',
-      memberId: peerId,
-      nickname: departedName,
-      members: groupRoster
-    });
   }
 
-  if (btnGenerateCode) {
-    btnGenerateCode.addEventListener('click', () => {
-      if (typeof Peer === 'undefined') {
-        showToast('WebRTC library loading... Check internet connection.', 'error');
-        return;
+  // Broadcast payload across WebRTC DataChannels + Socket Relay fallback
+  function broadcastGroupPayload(payload) {
+    const raw = JSON.stringify(payload);
+    let dcSentCount = 0;
+
+    peers.forEach((peerData) => {
+      if (peerData.dc && peerData.dc.readyState === 'open') {
+        try {
+          peerData.dc.send(raw);
+          dcSentCount++;
+        } catch (e) {}
       }
-      showToast('Creating private group room...', 'info');
-      createRoomSession();
     });
+
+    // Fallback: If any peer doesn't have an open DataChannel, relay via socket
+    if (socket && socket.connected && dcSentCount < peers.size) {
+      if (payload.type === 'chat') {
+        socket.emit('relay-message', payload);
+      } else if (payload.type === 'typing' || payload.type === 'stop-typing') {
+        socket.emit('relay-typing', payload);
+      }
+    }
   }
 
-  // Copy Code Button
+  function startHeartbeat() {
+    stopHeartbeat();
+    heartbeatInterval = setInterval(() => {
+      broadcastGroupPayload({ type: 'ping' });
+    }, 15000);
+  }
+
+  function stopHeartbeat() {
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval);
+      heartbeatInterval = null;
+    }
+  }
+
+  // --- ROOM CREATION (HOST ROLE) ---
+  async function createRoomSession() {
+    myNickname = getEffectiveNickname();
+    isHost = true;
+
+    const roomCode = Math.floor(100000 + Math.random() * 900000).toString();
+    currentRoomCode = roomCode;
+
+    try {
+      showToast('Connecting to server...', 'info');
+      const sigSocket = await connectSignalingServer();
+
+      // Clean old listeners
+      sigSocket.off('room-joined-ack');
+      sigSocket.off('user-joined');
+
+      sigSocket.emit('join-room', {
+        roomCode,
+        nickname: myNickname,
+        isHost: true
+      });
+
+      sigSocket.once('room-joined-ack', ({ roster }) => {
+        groupRoster = [{ id: myPeerId, name: myNickname, isHost: true }];
+        if (createdCodeDisplay) createdCodeDisplay.textContent = roomCode;
+        if (createActions) createActions.classList.remove('hidden');
+        if (btnGenerateCode) btnGenerateCode.classList.add('hidden');
+        showToast(`Group Room #${roomCode} created!`, 'success');
+      });
+
+      // Existing host listens for new joiners
+      // Notice: Existing host DOES NOT create an offer. The new joiner initiates!
+      sigSocket.on('user-joined', ({ peerId, nickname, isHost: remoteIsHost, roster }) => {
+        if (roster && Array.isArray(roster)) {
+          groupRoster = roster.map(m => ({ id: m.id, name: m.nickname || m.name, isHost: m.isHost }));
+        } else if (!groupRoster.some(m => m.id === peerId)) {
+          groupRoster.push({ id: peerId, name: nickname, isHost: remoteIsHost });
+        }
+        updateGroupStatus();
+      });
+
+    } catch (err) {
+      console.error('[ROOM CREATE ERROR]', err);
+      showToast('Could not reach local server. Run start.bat!', 'error');
+    }
+  }
+
+  if (btnGenerateCode) btnGenerateCode.addEventListener('click', createRoomSession);
+
   if (btnCopyCode) {
     btnCopyCode.addEventListener('click', () => {
       if (currentRoomCode) {
@@ -746,11 +915,9 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Share Direct Invite Link
   async function shareOrCopyInvite() {
     if (!currentRoomCode) return;
     const shareUrl = `${window.location.origin}${window.location.pathname}?room=${currentRoomCode}`;
-    
     if (navigator.share) {
       try {
         await navigator.share({
@@ -763,7 +930,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (err.name === 'AbortError') return;
       }
     }
-
     navigator.clipboard.writeText(shareUrl);
     showToast('Direct group invite link copied to clipboard!', 'info');
   }
@@ -781,7 +947,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Enter Chat Button from Create section
   if (btnEnterChat) {
     btnEnterChat.addEventListener('click', () => {
       if (currentRoomCode) {
@@ -791,155 +956,68 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // --- ROOM JOINING (JOINER ROLE) ---
-  function handleJoinRoom() {
+  async function handleJoinRoom() {
     if (!joinCodeInput) return;
     const code = joinCodeInput.value.trim();
-    
     if (!/^\d{6}$/.test(code)) {
       showToast('Please enter a valid 6-digit room code.', 'error');
       return;
     }
 
-    if (typeof Peer === 'undefined') {
-      showToast('WebRTC library loading... Please wait a moment.', 'error');
-      return;
-    }
-
     myNickname = getEffectiveNickname();
     isHost = false;
+    currentRoomCode = code;
 
     showToast(`Connecting to group #${code}...`, 'info');
 
-    const hostPeerId = `chatling-grp-${code}`;
+    try {
+      const sigSocket = await connectSignalingServer();
 
-    if (peer) {
-      try { peer.destroy(); } catch (e) {}
+      sigSocket.off('room-joined-ack');
+      sigSocket.off('user-joined');
+
+      sigSocket.emit('join-room', {
+        roomCode: code,
+        nickname: myNickname,
+        isHost: false
+      });
+
+      sigSocket.once('room-joined-ack', ({ peerId, existingUsers, roster }) => {
+        myPeerId = peerId;
+
+        if (roster && Array.isArray(roster)) {
+          groupRoster = roster.map(m => ({ id: m.id, name: m.nickname || m.name, isHost: m.isHost }));
+        } else {
+          groupRoster = [{ id: myPeerId, name: myNickname, isHost: false }];
+        }
+
+        // As the NEW joiner, we initiate WebRTC connections to all EXISTING users
+        if (Array.isArray(existingUsers)) {
+          existingUsers.forEach(u => {
+            initiatePeerConnection(u.id, u.nickname);
+          });
+        }
+
+        enterChatView(code);
+        showToast(`Joined Group #${code}!`, 'success');
+        appendSystemBanner(`Joined Group #${code}`);
+        updateGroupStatus();
+      });
+
+      // Subsequent peers who join after us
+      sigSocket.on('user-joined', ({ peerId, nickname, isHost: remoteIsHost, roster }) => {
+        if (roster && Array.isArray(roster)) {
+          groupRoster = roster.map(m => ({ id: m.id, name: m.nickname || m.name, isHost: m.isHost }));
+        } else if (!groupRoster.some(m => m.id === peerId)) {
+          groupRoster.push({ id: peerId, name: nickname, isHost: remoteIsHost });
+        }
+        updateGroupStatus();
+      });
+
+    } catch (err) {
+      console.error('[JOIN ERROR]', err);
+      showToast('Could not connect. Ensure start.bat is running!', 'error');
     }
-
-    peer = new Peer(PEER_CONFIG);
-    setupPeerErrorHandlers(peer);
-
-    peer.on('open', (id) => {
-      myPeerId = id;
-      currentRoomCode = code;
-
-      // Connect to group room host
-      hostConn = peer.connect(hostPeerId, { reliable: true });
-
-      hostConn.on('open', () => {
-        // Send join request with nickname and self ID
-        hostConn.send({
-          type: 'join-request',
-          senderId: myPeerId,
-          nickname: myNickname
-        });
-      });
-
-      hostConn.on('data', (data) => {
-        if (!data) return;
-
-        if (data.type === 'ping') return;
-
-        // 1. Join approved by Host
-        if (data.type === 'join-approved') {
-          groupRoster = Array.isArray(data.members) ? data.members : [];
-          enterChatView(code);
-          showToast(`Joined Group #${code}!`, 'success');
-          appendSystemBanner(`Joined Group #${code}`);
-          updateGroupStatus();
-          return;
-        }
-
-        // 2. Another member joined
-        if (data.type === 'member-joined') {
-          if (Array.isArray(data.members)) {
-            groupRoster = data.members;
-          }
-          const joinerName = data.member ? data.member.name : 'A new member';
-          showToast(`${joinerName} joined the group!`, 'success');
-          appendSystemBanner(`${joinerName} joined the group`);
-          updateGroupStatus();
-          playNotificationSound();
-          return;
-        }
-
-        // 3. A member left
-        if (data.type === 'member-left') {
-          if (Array.isArray(data.members)) {
-            groupRoster = data.members;
-          }
-          const leftName = data.nickname || 'A member';
-          showToast(`${leftName} left the group.`, 'info');
-          appendSystemBanner(`${leftName} left the group`);
-          updateGroupStatus();
-          return;
-        }
-
-        // 4. Incoming Group Message
-        if (data.type === 'group-message') {
-          if (!seenMessageIds.has(data.id)) {
-            seenMessageIds.add(data.id);
-            appendMessage({
-              id: data.id,
-              senderName: data.senderName,
-              senderId: data.senderId,
-              content: data.content,
-              isOutgoing: false,
-              timestamp: data.timestamp
-            });
-            playNotificationSound();
-          }
-          return;
-        }
-
-        // 5. Message Delivery Acknowledgment
-        if (data.type === 'msg-ack') {
-          markMessageDelivered(data.id);
-          return;
-        }
-
-        // 6. Typing Indicators
-        if (data.type === 'typing') {
-          const name = data.nickname || 'Someone';
-          if (activeTypers.has(data.senderId)) {
-            clearTimeout(activeTypers.get(data.senderId).timer);
-          }
-          const timer = setTimeout(() => {
-            activeTypers.delete(data.senderId);
-            updateTypingDisplay();
-          }, 3500);
-
-          activeTypers.set(data.senderId, { nickname: name, timer });
-          updateTypingDisplay();
-          return;
-        }
-
-        if (data.type === 'stop-typing') {
-          if (activeTypers.has(data.senderId)) {
-            clearTimeout(activeTypers.get(data.senderId).timer);
-            activeTypers.delete(data.senderId);
-          }
-          updateTypingDisplay();
-          return;
-        }
-
-        // 7. Host closed the group
-        if (data.type === 'host-closed') {
-          showToast(data.message || 'Group host has ended the room.', 'info');
-          leaveChatRoom(false);
-          return;
-        }
-      });
-
-      hostConn.on('close', () => {
-        showToast('Group room disconnected.', 'info');
-        appendSystemBanner('Connection to group room host closed');
-      });
-
-      hostConn.on('error', (err) => {
-        console.warn('[JOINER] Host conn error:', err);
-      });
-    });
   }
 
   if (btnJoinRoom) btnJoinRoom.addEventListener('click', handleJoinRoom);
@@ -953,27 +1031,22 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Check URL query parameters for auto-join
+  // Auto-join from URL parameter ?room=XXXXXX
   const urlParams = new URLSearchParams(window.location.search);
   const roomParam = urlParams.get('room');
   if (roomParam && /^\d{6}$/.test(roomParam)) {
     switchHomeTab('join');
     if (joinCodeInput) joinCodeInput.value = roomParam;
-    
-    let pollCount = 0;
-    const pollPeerInterval = setInterval(() => {
-      pollCount++;
-      if (typeof Peer !== 'undefined') {
-        clearInterval(pollPeerInterval);
-        handleJoinRoom();
-      } else if (pollCount > 50) {
-        clearInterval(pollPeerInterval);
-        showToast('Connection timeout loading WebRTC library.', 'error');
-      }
-    }, 100);
+    setTimeout(() => {
+      handleJoinRoom();
+    }, 400);
   }
 
-  // --- GROUP MODAL LISTENERS ---
+  // --- HOME NAVIGATION TABS ---
+  if (tabCreate) tabCreate.addEventListener('click', () => switchHomeTab('create'));
+  if (tabJoin) tabJoin.addEventListener('click', () => switchHomeTab('join'));
+
+  // --- GROUP MODAL ---
   if (btnGroupInfo && membersModal) {
     btnGroupInfo.addEventListener('click', () => {
       renderMembersList();
@@ -995,7 +1068,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --- CHAT TOOL ACTIONS ---
+  // Header Room Code Pill
   if (headerCodePill) {
     headerCodePill.addEventListener('click', () => {
       if (currentRoomCode) {
@@ -1005,11 +1078,12 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  // Clear Chat Button
   if (btnClearChat) {
     btnClearChat.addEventListener('click', () => {
       if (!confirm('Clear all messages from your device?')) return;
       if (chatMessages) {
-        const banners = chatMessages.querySelectorAll('div[id^="msg-wrap-"], .select-none:not(:first-child)');
+        const banners = chatMessages.querySelectorAll('div[id^="msg-wrap-"]');
         banners.forEach(b => b.remove());
         showToast('Chat history cleared locally.', 'info');
       }
@@ -1022,50 +1096,34 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    if (isHost) {
-      // Host closes the room for everyone
-      broadcastToGroup({
-        type: 'host-closed',
-        message: 'The group host has ended the chat.'
-      });
-    } else if (hostConn && hostConn.open) {
-      // Member notifies host of leave
-      try {
-        hostConn.send({
-          type: 'member-leave',
-          senderId: myPeerId,
-          nickname: myNickname
-        });
-      } catch (e) {}
+    broadcastGroupPayload({
+      type: 'leave',
+      senderId: myPeerId,
+      nickname: myNickname
+    });
+
+    if (socket && socket.connected) {
+      socket.emit('leave-room');
     }
 
     stopHeartbeat();
 
-    // Close all connections
-    connectedPeers.forEach((p) => {
-      try { p.conn.close(); } catch (e) {}
+    // Teardown WebRTC peer connections
+    peers.forEach((p) => {
+      try {
+        if (p.dc) p.dc.close();
+        if (p.pc) p.pc.close();
+      } catch (e) {}
     });
-    connectedPeers.clear();
-
-    if (hostConn) {
-      try { hostConn.close(); } catch (e) {}
-      hostConn = null;
-    }
+    peers.clear();
+    iceCandidateQueues.clear();
 
     groupRoster = [];
     activeTypers.clear();
     seenMessageIds.clear();
-
-    if (peer) {
-      try { peer.destroy(); } catch (e) {}
-      peer = null;
-    }
-
     currentRoomCode = null;
-    myPeerId = null;
     isHost = false;
 
-    // Reset UI to home view
     if (chatView) chatView.classList.add('hidden');
     if (homeView) homeView.classList.remove('hidden');
     if (createActions) createActions.classList.add('hidden');
@@ -1073,13 +1131,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (createdCodeDisplay) createdCodeDisplay.textContent = '------';
     if (joinCodeInput) joinCodeInput.value = '';
 
-    // Clear messages
     if (chatMessages) {
       const messages = chatMessages.querySelectorAll('div[id^="msg-wrap-"]');
       messages.forEach(m => m.remove());
     }
 
-    // Clean URL
     if (window.history && window.history.replaceState) {
       window.history.replaceState({}, '', window.location.pathname);
     }
@@ -1087,46 +1143,34 @@ document.addEventListener('DOMContentLoaded', () => {
     showToast('You left the group chat.', 'info');
   }
 
-  if (btnLeaveChat) {
-    btnLeaveChat.addEventListener('click', () => leaveChatRoom(true));
-  }
+  if (btnLeaveChat) btnLeaveChat.addEventListener('click', () => leaveChatRoom(true));
 
-  // --- TYPING INDICATOR EMISSION ---
+  // --- TYPING INDICATORS ---
   if (messageInput) {
     messageInput.addEventListener('input', () => {
       if (!currentRoomCode) return;
 
       if (!isTyping) {
         isTyping = true;
-        const typingPayload = {
+        broadcastGroupPayload({
           type: 'typing',
           senderId: myPeerId,
           nickname: myNickname
-        };
-        if (isHost) {
-          broadcastToGroup(typingPayload);
-        } else if (hostConn && hostConn.open) {
-          try { hostConn.send(typingPayload); } catch (e) {}
-        }
+        });
       }
 
       clearTimeout(typingTimeout);
       typingTimeout = setTimeout(() => {
         isTyping = false;
-        const stopPayload = {
+        broadcastGroupPayload({
           type: 'stop-typing',
           senderId: myPeerId
-        };
-        if (isHost) {
-          broadcastToGroup(stopPayload);
-        } else if (hostConn && hostConn.open) {
-          try { hostConn.send(stopPayload); } catch (e) {}
-        }
+        });
       }, 2500);
     });
   }
 
-  // --- EMOJI PICKER ACTIONS ---
+  // --- EMOJI PICKER ---
   if (btnEmojiToggle && emojiPicker) {
     btnEmojiToggle.addEventListener('click', (e) => {
       e.stopPropagation();
@@ -1150,7 +1194,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --- SEND MESSAGE TRIGGER ---
+  // --- SEND MESSAGE ---
   function handleSendMessage() {
     if (!messageInput) return;
     const content = messageInput.value.trim();
@@ -1160,11 +1204,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const tempId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const timestamp = new Date().toISOString();
 
-    // Reset input field immediately
     messageInput.value = '';
-
-    // Record as seen so we don't display it again
     seenMessageIds.add(tempId);
+
+    const hasPeers = peers.size > 0;
 
     // Append outgoing bubble locally
     appendMessage({
@@ -1174,11 +1217,11 @@ document.addEventListener('DOMContentLoaded', () => {
       content: trimmedContent,
       isOutgoing: true,
       timestamp,
-      status: isHost ? 'delivered' : 'sent'
+      status: hasPeers ? 'sent' : 'delivered'
     });
 
     const msgPayload = {
-      type: 'group-message',
+      type: 'chat',
       id: tempId,
       senderName: myNickname,
       senderId: myPeerId,
@@ -1186,27 +1229,13 @@ document.addEventListener('DOMContentLoaded', () => {
       timestamp
     };
 
-    if (isHost) {
-      // Host broadcasts to all connected members
-      broadcastToGroup(msgPayload);
-    } else if (hostConn && hostConn.open) {
-      // Member sends to Host (which relays to everyone)
-      try {
-        hostConn.send(msgPayload);
-      } catch (e) {
-        console.warn('[SEND] Failed to send to host:', e);
-      }
-    }
+    broadcastGroupPayload(msgPayload);
 
-    const stopPayload = {
+    // Stop typing
+    broadcastGroupPayload({
       type: 'stop-typing',
       senderId: myPeerId
-    };
-    if (isHost) {
-      broadcastToGroup(stopPayload);
-    } else if (hostConn && hostConn.open) {
-      try { hostConn.send(stopPayload); } catch (e) {}
-    }
+    });
     isTyping = false;
     clearTimeout(typingTimeout);
 
@@ -1221,7 +1250,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Dismiss keyboard when user scrolls or taps chat history (WhatsApp behavior)
+  // Dismiss keyboard on scroll
   if (chatMessages) {
     const dismissKeyboard = (e) => {
       if (e.target && e.target.closest && e.target.closest('button, a, input, textarea')) return;
@@ -1249,13 +1278,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }, { passive: true });
   }
 
-  // Global offline / online indicator
+  // Global offline / online
   window.addEventListener('offline', () => {
     if (connectionBanner) connectionBanner.classList.remove('hidden');
   });
 
   window.addEventListener('online', () => {
     if (connectionBanner) connectionBanner.classList.add('hidden');
-    showToast('Network online. Group connected.', 'success');
+    showToast('Network back online.', 'success');
   });
 });

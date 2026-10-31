@@ -20,6 +20,7 @@ const filesToCopy = [
   { src: 'logo.png', dest: 'public/logo.png' },
   { src: 'css/styles.css', dest: 'public/css/styles.css' },
   { src: 'js/app.js', dest: 'public/js/app.js' },
+  { src: 'js/socket.io.min.js', dest: 'public/js/socket.io.min.js' },
   { src: 'js/peerjs.min.js', dest: 'public/js/peerjs.min.js' }
 ];
 
