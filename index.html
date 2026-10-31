@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
   <title>Chatling | Private Ephemeral Group & 1-to-1 Chat</title>
-  <link rel="icon" type="image/png" href="/logo.png" />
-  <link rel="apple-touch-icon" href="/logo.png" />
+  <link rel="icon" type="image/png" href="logo.png" />
+  <link rel="apple-touch-icon" href="logo.png" />
   
   <!-- Critical Instant Theme Init to prevent Flash of Unstyled Theme -->
   <script>
@@ -32,7 +32,7 @@
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;800&display=swap" />
 
   <!-- Core Self-Contained Stylesheet -->
-  <link rel="stylesheet" href="/css/styles.css" />
+  <link rel="stylesheet" href="css/styles.css" />
 
   <!-- Tailwind CSS CDN -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -83,7 +83,7 @@
       <!-- Circular Badge Logo and Title -->
       <div class="flex flex-col items-center justify-center text-center mb-5 select-none">
         <div class="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-white shadow-[0_4px_20px_rgba(0,0,0,0.08)] border border-slate-100 dark:border-slate-800 flex items-center justify-center p-1 mb-2.5 transition-transform duration-300 hover:scale-105">
-          <img src="/logo.png" alt="Chatling Logo" class="w-full h-full object-contain rounded-full" width="96" height="96" fetchpriority="high" />
+          <img src="logo.png" alt="Chatling Logo" class="w-full h-full object-contain rounded-full" width="96" height="96" fetchpriority="high" />
         </div>
         <h1 class="text-2xl sm:text-3xl font-black tracking-tight text-[#0b172a] dark:text-white">Chatling</h1>
         <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">Private Ephemeral Group & 1-to-1 Chat</p>
@@ -371,17 +371,15 @@
 
   </div>
 
-  <!-- High-Performance Local PeerJS Script (with CDN fallback) -->
-  <script src="/js/peerjs.min.js"></script>
+  <!-- PeerJS WebRTC Library (Local with Synchronous Fallback) -->
+  <script src="js/peerjs.min.js"></script>
   <script>
     if (typeof Peer === 'undefined') {
-      var cdnScript = document.createElement('script');
-      cdnScript.src = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js';
-      document.head.appendChild(cdnScript);
+      document.write('<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"><\/script>');
     }
   </script>
 
   <!-- Main Application Script -->
-  <script src="/js/app.js" defer></script>
+  <script src="js/app.js"></script>
 </body>
 </html>
