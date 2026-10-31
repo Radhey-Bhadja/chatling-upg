@@ -2,7 +2,6 @@
   "name": "chatling-app",
   "version": "1.0.0",
   "description": "Private Ephemeral Group Web Chat using WebRTC by room code",
-  "main": "server/server.js",
   "scripts": {
     "start": "node server/server.js",
     "build": "node build.js"
