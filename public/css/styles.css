@@ -1,8 +1,6 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@600;800&display=swap');
-
 :root {
-  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
+  --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
   /* Primary Brand Colors */
   --color-primary: #10b981;
@@ -23,17 +21,34 @@
   color: #10b981 !important;
 }
 
-/* Dynamic Viewport Height for Mobile Browser URL Bar Safe-Area */
+/* Dynamic Viewport Height & Mobile Browser Polish */
 html, body {
   height: 100dvh;
   width: 100vw;
+  margin: 0;
+  padding: 0;
   overflow: hidden;
   font-family: var(--font-sans);
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+  background-color: #f8fafc;
+  color: #1e293b;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-/* Custom Scrollbar */
+.dark html, .dark body, html.dark, html.dark body {
+  background-color: #080c14;
+  color: #f1f5f9;
+}
+
+/* Smooth layout transitions */
+#home-view, #chat-view {
+  transition: opacity 0.15s ease-out;
+}
+
+/* Custom High Performance Scrollbar */
 ::-webkit-scrollbar {
   width: 4px;
   height: 4px;
@@ -104,13 +119,13 @@ html, body {
   word-break: break-word;
   overflow-wrap: anywhere;
   box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.08);
-  animation: bubble-in 0.18s cubic-bezier(0.16, 1, 0.3, 1) ease-out;
+  animation: bubble-in 0.15s cubic-bezier(0.16, 1, 0.3, 1) ease-out;
 }
 
 @keyframes bubble-in {
   from {
     opacity: 0;
-    transform: translateY(6px) scale(0.97);
+    transform: translateY(5px) scale(0.98);
   }
   to {
     opacity: 1;
