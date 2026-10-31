@@ -1,11 +1,14 @@
+/* =========================================================
+   Chatling – Core Stylesheet
+   WhatsApp-inspired design, fully mobile responsive
+   ========================================================= */
+
 :root {
   --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  /* WhatsApp Brand Colors */
-  --wa-teal: #008069;
+  /* WhatsApp palette */
   --wa-green: #25D366;
-  --wa-green-dark: #059669;
   --wa-bubble-out: #d9fdd3;
   --wa-bubble-out-dark: #005c4b;
   --wa-bubble-in: #ffffff;
@@ -15,8 +18,8 @@
   --wa-tick-blue: #53bdeb;
 }
 
-/* Reset & Dynamic Viewport Height */
-* {
+/* ── Reset & Base ── */
+*, *::before, *::after {
   box-sizing: border-box;
 }
 
@@ -36,36 +39,23 @@ html, body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-.dark html, .dark body, html.dark, html.dark body {
+html.dark, html.dark body {
   background-color: #0b141a;
   color: #e9edef;
 }
 
-/* Safe Area Inset Support for Notch & Mobile Nav Bars */
+/* ── Safe Area (Notch + Mobile Nav Bars) ── */
 footer {
-  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+  padding-bottom: max(0.625rem, env(safe-area-inset-bottom));
 }
 
-/* Scrollbar Polish */
-::-webkit-scrollbar {
-  width: 5px;
-  height: 5px;
-}
+/* ── Scrollbar Polish ── */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(134,150,160,0.3); border-radius: 9999px; }
+html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(134, 150, 160, 0.3);
-  border-radius: 9999px;
-}
-
-.dark ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-/* Chat Messages WhatsApp Scroll View */
+/* ── Chat Messages Area ── */
 #chat-messages {
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -75,7 +65,7 @@ footer {
   flex-direction: column;
 }
 
-/* Flexbox Bottom Anchor Spacer (Collapses when scrolling up) */
+/* Pushes messages to the bottom */
 #chat-messages::before {
   content: "";
   display: block;
@@ -83,22 +73,22 @@ footer {
   min-height: 8px;
 }
 
-/* Authentic WhatsApp Chat Wallpaper Pattern */
+/* ── WhatsApp Chat Wallpaper ── */
 .wa-chat-bg {
   background-color: #efeae2;
-  background-image: 
+  background-image:
     radial-gradient(#d1c7b7 1.2px, transparent 1.2px),
-    radial-gradient(rgba(0, 0, 0, 0.02) 1px, transparent 1px);
+    radial-gradient(rgba(0,0,0,0.015) 1px, transparent 1px);
   background-size: 20px 20px, 40px 40px;
 }
 
-.dark .wa-chat-bg {
+html.dark .wa-chat-bg {
   background-color: #0b141a;
-  background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1.2px, transparent 1.2px);
+  background-image: radial-gradient(rgba(255,255,255,0.04) 1.2px, transparent 1.2px);
   background-size: 20px 20px;
 }
 
-/* Header Navigation Bar Buttons */
+/* ── Nav Buttons ── */
 .nav-btn {
   display: inline-flex;
   align-items: center;
@@ -106,103 +96,111 @@ footer {
   flex-shrink: 0;
   transition: all 0.15s ease-in-out;
   cursor: pointer;
+  border: none;
+  background: none;
 }
 
-/* WhatsApp Message Bubbles */
+/* ── Message Bubbles ── */
 .bubble {
   position: relative;
   word-break: break-word;
   overflow-wrap: anywhere;
-  box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
-  animation: bubble-in 0.15s cubic-bezier(0.16, 1, 0.3, 1) ease-out;
+  box-shadow: 0 1px 0.5px rgba(11,20,26,0.13);
+  animation: bubble-in 0.15s cubic-bezier(0.16,1,0.3,1) forwards;
+  max-width: 85%;
+}
+
+@media (min-width: 640px) {
+  .bubble { max-width: 70%; }
 }
 
 @keyframes bubble-in {
-  from {
-    opacity: 0;
-    transform: translateY(4px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  from { opacity: 0; transform: translateY(5px) scale(0.97); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-/* Outgoing Message (Right Aligned, WhatsApp Soft Green) */
+/* Outgoing: soft green, right-aligned */
 .bubble-out {
-  background-color: #d9fdd3;
+  background-color: var(--wa-bubble-out);
   color: #111b21;
-  border-radius: 12px 12px 2px 12px !important;
+  border-radius: 12px 12px 2px 12px;
+  align-self: flex-end;
 }
 
-.dark .bubble-out {
-  background-color: #005c4b;
+html.dark .bubble-out {
+  background-color: var(--wa-bubble-out-dark);
   color: #e9edef;
-  border-radius: 12px 12px 2px 12px !important;
 }
 
-/* Incoming Message (Left Aligned, Pure White) */
+/* Incoming: white, left-aligned */
 .bubble-in {
-  background-color: #ffffff;
+  background-color: var(--wa-bubble-in);
   color: #111b21;
-  border-radius: 12px 12px 12px 2px !important;
+  border-radius: 12px 12px 12px 2px;
+  align-self: flex-start;
 }
 
-.dark .bubble-in {
-  background-color: #202c33;
+html.dark .bubble-in {
+  background-color: var(--wa-bubble-in-dark);
   color: #e9edef;
-  border-radius: 12px 12px 12px 2px !important;
 }
 
-/* Status Pulse Animation */
+/* ── Status Dot Pulse ── */
 @keyframes pulse-emerald {
-  0% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
-  }
-  70% {
-    transform: scale(1);
-    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
-  }
-  100% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
-  }
+  0%   { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16,185,129,0.7); }
+  70%  { transform: scale(1);    box-shadow: 0 0 0 6px rgba(16,185,129,0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16,185,129,0); }
 }
 
-.status-pulse {
-  animation: pulse-emerald 2s infinite;
-}
+.status-pulse { animation: pulse-emerald 2s infinite; }
 
-/* Typing wave dots */
-.typing-dot {
-  animation: wave 1.3s linear infinite;
-}
-.typing-dot:nth-child(2) {
-  animation-delay: -1.1s;
-}
-.typing-dot:nth-child(3) {
-  animation-delay: -0.9s;
-}
+/* ── Typing Wave Dots ── */
+.typing-dot { animation: wave 1.3s linear infinite; display: inline-block; }
+.typing-dot:nth-child(2) { animation-delay: -1.1s; }
+.typing-dot:nth-child(3) { animation-delay: -0.9s; }
 
 @keyframes wave {
-  0%, 60%, 100% {
-    transform: initial;
-  }
-  30% {
-    transform: translateY(-4px);
-  }
+  0%, 60%, 100% { transform: initial; }
+  30% { transform: translateY(-4px); }
 }
 
-/* Glow accents */
-.glow-primary {
-  box-shadow: 0 0 25px -5px rgba(16, 185, 129, 0.4);
+/* ── Message Row Wrappers ── */
+.msg-row-out {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  padding: 2px 0;
 }
 
-.glow-subtle {
-  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.12);
+.msg-row-in {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  padding: 2px 0;
 }
 
-.dark .glow-subtle {
-  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+/* ── System Banner ── */
+.sys-banner {
+  display: flex;
+  justify-content: center;
+  margin: 6px 0;
 }
+
+.sys-banner-inner {
+  background: rgba(255,255,255,0.9);
+  color: #667781;
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 9999px;
+  box-shadow: 0 1px 1px rgba(0,0,0,0.06);
+  max-width: 90%;
+  text-align: center;
+}
+
+html.dark .sys-banner-inner {
+  background: rgba(32,44,51,0.9);
+  color: #8696a0;
+}
+
+/* ── Glow accents ── */
+.glow-primary { box-shadow: 0 0 25px -5px rgba(16,185,129,0.4); }

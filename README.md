@@ -1,51 +1,115 @@
-# Chatling - Private Ephemeral Group Web Chat (WebRTC)
+# Chatling
 
-A private, ephemeral group web chat application built for instant communication using **WebRTC DataChannels** by 6-digit room codes. Messages and events flow directly peer-to-peer across users' browsers with **zero database** and **zero server storage**.
+**Private, ephemeral group chat using WebRTC — no login, no server storage.**
+
+Share a 6-digit room code with friends and start chatting instantly. Messages are peer-to-peer; nothing is stored on any server.
 
 ---
 
-## 🚀 Quick Start
+## Features
 
-### Option 1: One-Click Launch (Windows)
-Double-click `start.bat`. 
-It will verify Node.js, install dependencies if missing, start the local server, and **automatically open the app in your default browser** (`http://localhost:3000`).
+- 🔐 No login required — just pick a nickname and share a code
+- 🔢 6-digit room codes (generate or enter one)
+- 📡 WebRTC peer-to-peer via PeerJS Cloud Broker
+- 💬 WhatsApp-style message bubbles with delivery ticks
+- 👥 Live members list with online count
+- ✍️ Typing indicators
+- 😊 Emoji picker
+- 🌙 Dark / Light theme toggle
+- 📱 Fully mobile responsive (safe-area aware)
+- 🔗 Share invite links (opens directly in the room)
+- ⚡ Pure static site — works on Vercel, Netlify, GitHub Pages
 
-### Option 2: Command Line
+---
+
+## How it Works
+
+```
+Topology: Star/Hub model
+  - Room Creator = Host peer
+  - Host peer ID = "chatling-XXXXXX" (6-digit code)
+  - Joiners connect to the host peer ID
+  - Host relays all messages to every other participant
+  - PeerJS Cloud Broker (0.peerjs.com) handles signaling
+  - Google STUN servers handle NAT traversal
+```
+
+No messages pass through any server you own — they flow directly between browsers via WebRTC DataChannels.
+
+---
+
+## Deploy to Vercel
+
+### Option 1 — Vercel CLI
+
 ```bash
+npm i -g vercel
+vercel --prod
+```
+
+### Option 2 — GitHub Integration
+
+1. Push this repo to GitHub
+2. Go to [vercel.com](https://vercel.com) → **New Project** → Import your GitHub repo
+3. Vercel auto-detects `vercel.json` and deploys from the `public/` folder
+4. Your app will be live at `https://your-project.vercel.app`
+
+---
+
+## Local Development
+
+No build step needed. Just serve the `public/` folder:
+
+```bash
+# Option A: Node.js server (included)
 npm start
+# Opens at http://localhost:3000
+
+# Option B: Any static server
+npx serve public
+# or
+python -m http.server 3000 --directory public
 ```
-Or:
-```bash
-node server/server.js
-```
-The server will start and automatically launch `http://localhost:3000`.
 
 ---
 
-## 👥 How to Test Group Chat Locally
+## Project Structure
 
-1. Start the app using `start.bat` or `npm start`.
-2. In the first browser tab:
-   - Enter your nickname (e.g. `Alice`).
-   - Click **Generate Group Room**. A 6-digit room code will appear (e.g. `582914`).
-   - Click **Enter Group Chat**.
-3. Open a **second tab** (or an incognito window / another browser):
-   - Enter another nickname (e.g. `Bob`).
-   - Click the **Join Group** tab.
-   - Enter the 6-digit code `582914` (or paste the direct invite link).
-   - Click **Join Group Chat**.
-4. Both peers will instantly negotiate a direct WebRTC connection:
-   - Group status lights up green (**Online**).
-   - Messages, live typing indicators, delivery ticks, and emoji reactions transmit peer-to-peer over **WebRTC DataChannels**.
-   - You can open 3, 4, or more tabs to experience the full mesh group conversation!
+```
+chatling/
+├── public/              ← Static site (what Vercel deploys)
+│   ├── index.html       ← Full single-page app
+│   ├── logo.png         ← App icon
+│   ├── css/
+│   │   └── styles.css   ← WhatsApp-style CSS
+│   └── js/
+│       └── app.js       ← WebRTC chat engine
+├── server/
+│   └── server.js        ← Optional local Node.js dev server
+├── vercel.json          ← Vercel deployment config
+├── package.json
+└── .gitignore
+```
 
 ---
 
-## 🔑 Key Features
+## Browser Support
 
-- 👥 **Multi-User Full Mesh WebRTC Group**: Real-time communication directly between participants with no intermediary database.
-- 🔒 **Zero Server Storage & Ephemeral**: All messages travel directly across WebRTC `RTCDataChannel`. Leaving the chat room immediately destroys and clears the local history.
-- 🔢 **6-Digit Room Codes & Instant Links**: Generate a room code with one click, or share the direct link (`?room=123456`) to join immediately.
-- ✍️ **Multi-User Live Typing Indicators**: Real-time indicator showing which participants are actively typing.
-- 🎨 **WhatsApp Aesthetic & Theme Toggle**: WhatsApp-style bubble design, sender color tagging, delivery checkmarks, and dark/light mode toggle with system preference auto-detection.
-- 📴 **100% Offline-Capable Local Signaling**: Socket.IO client is bundled locally (`js/socket.io.min.js`) so the app works on local offline networks, LAN, or Wi-Fi without depending on external cloud servers.
+| Browser         | Support |
+|-----------------|---------|
+| Chrome 80+      | ✅      |
+| Firefox 75+     | ✅      |
+| Safari 14+      | ✅      |
+| Edge 80+        | ✅      |
+| Mobile Chrome   | ✅      |
+| Mobile Safari   | ✅      |
+
+> WebRTC requires HTTPS in production (Vercel provides this automatically).
+
+---
+
+## Privacy
+
+- **Zero server storage** — no messages, nicknames, or room data is saved anywhere
+- **Ephemeral** — the room disappears when everyone leaves
+- **P2P encrypted** — WebRTC DataChannels are DTLS encrypted by the browser

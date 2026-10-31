@@ -1,322 +1,268 @@
-// Chatling - Private Ephemeral Group Web Chat Engine
-// Peer-to-Peer WebRTC Architecture by 6-Digit Room Code
-// 100% Client-Side Ready (Vercel, Static Hosting, & Local Server)
-// Authentic WhatsApp Aesthetic & Full Mobile Responsiveness
+/**
+ * Chatling – Peer-to-Peer Group Chat Engine
+ * Architecture: WebRTC via PeerJS Cloud Broker
+ * No login required. 6-digit room codes. Pure static hosting (Vercel-ready).
+ *
+ * Topology: Star/Hub — Host peer acts as relay hub.
+ *   - Host: receives messages from joiners → relays to all others.
+ *   - Joiners: connect only to Host peer, not to each other.
+ *
+ * Supported: Chrome, Firefox, Safari, Edge (desktop + mobile)
+ */
 
 document.addEventListener('DOMContentLoaded', () => {
-  // STUN Configuration for WebRTC NAT Traversal
+
+  /* ─────────────────────────────────────────
+     CONFIGURATION
+  ───────────────────────────────────────── */
   const PEER_CONFIG = {
     config: {
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
         { urls: 'stun:stun1.l.google.com:19302' },
         { urls: 'stun:stun2.l.google.com:19302' },
-        { urls: 'stun:stun3.l.google.com:19302' },
         { urls: 'stun:global.stun.twilio.com:3478' }
       ]
     },
     debug: 0
   };
 
-  // State Management
-  let peer = null;
-  let myPeerId = null;
-  let myNickname = '';
-  let isHost = false;
+  /* ─────────────────────────────────────────
+     STATE
+  ───────────────────────────────────────── */
+  let peer          = null;
+  let myPeerId      = null;
+  let myNickname    = '';
+  let isHost        = false;
   let currentRoomCode = null;
-  let hostConnection = null; // Joiner's connection to host
+  let hostConn      = null;       // joiner's DataConnection to host
 
-  // Host tracks connected members: Map<peerId, { conn, nickname, isHost }>
-  const connectedPeers = new Map();
+  /** @type {Map<string, { conn: DataConnection, nickname: string }>} */
+  const peers       = new Map();  // host only: peerId → { conn, nickname }
 
-  // Canonical Group Roster: Array<{ id: string, name: string, isHost: boolean }>
-  let groupRoster = [];
+  /** @type {Array<{ id: string, name: string, isHost: boolean }>} */
+  let roster        = [];
 
-  // Deduplication set for message IDs
-  const seenMessageIds = new Set();
+  const seenMsgIds  = new Set();
+  const activeTypers = new Map(); // peerId → { nickname, timer }
 
-  // Typing state: Map<peerId, { nickname: string, timer: any }>
-  const activeTypers = new Map();
-  let typingTimeout = null;
-  let isTyping = false;
-  let heartbeatInterval = null;
+  let typingTimeout  = null;
+  let isTyping       = false;
+  let heartbeatTimer = null;
 
-  // WhatsApp-style Participant Author Colors
-  const NAME_COLORS = [
-    '#25D366', // Emerald Green
-    '#0284c7', // Sky Blue
-    '#8b5cf6', // Violet
-    '#d97706', // Amber
-    '#db2777', // Pink
-    '#0d9488', // Teal
-    '#ea580c', // Orange
-    '#4f46e5', // Indigo
-    '#e11d48'  // Rose
+  /* ─────────────────────────────────────────
+     COLORS
+  ───────────────────────────────────────── */
+  const COLORS = [
+    '#25D366','#0284c7','#8b5cf6','#d97706',
+    '#db2777','#0d9488','#ea580c','#4f46e5','#e11d48'
   ];
 
-  function getSenderColor(nameOrId) {
-    if (!nameOrId) return NAME_COLORS[0];
-    let hash = 0;
-    for (let i = 0; i < nameOrId.length; i++) {
-      hash = nameOrId.charCodeAt(i) + ((hash << 5) - hash);
-    }
-    const idx = Math.abs(hash) % NAME_COLORS.length;
-    return NAME_COLORS[idx];
+  function nameColor(str) {
+    if (!str) return COLORS[0];
+    let h = 0;
+    for (let i = 0; i < str.length; i++) h = str.charCodeAt(i) + ((h << 5) - h);
+    return COLORS[Math.abs(h) % COLORS.length];
   }
 
-  // DOM Elements - Home View
-  const homeView = document.getElementById('home-view');
-  const userNicknameInput = document.getElementById('user-nickname-input');
-  const tabCreate = document.getElementById('tab-create');
-  const tabJoin = document.getElementById('tab-join');
-  const sectionCreate = document.getElementById('section-create');
-  const sectionJoin = document.getElementById('section-join');
-  const createdCodeDisplay = document.getElementById('created-code-display');
-  const btnGenerateCode = document.getElementById('btn-generate-code');
-  const createActions = document.getElementById('create-actions');
-  const btnCopyCode = document.getElementById('btn-copy-code');
-  const btnCopyLink = document.getElementById('btn-copy-link');
-  const btnEnterChat = document.getElementById('btn-enter-chat');
-  const joinCodeInput = document.getElementById('join-code-input');
-  const btnJoinRoom = document.getElementById('btn-join-room');
+  /* ─────────────────────────────────────────
+     DOM REFS
+  ───────────────────────────────────────── */
+  const $ = id => document.getElementById(id);
 
-  // DOM Elements - Chat View
-  const chatView = document.getElementById('chat-view');
-  const statusIndicator = document.getElementById('status-indicator');
-  const statusText = document.getElementById('status-text');
-  const badgeMemberCount = document.getElementById('badge-member-count');
-  const headerGroupTitle = document.getElementById('header-group-title');
-  const btnGroupInfo = document.getElementById('btn-group-info');
-  const headerInviteBtn = document.getElementById('header-invite-btn');
-  const headerCodePill = document.getElementById('header-code-pill');
-  const headerRoomCode = document.getElementById('header-room-code');
-  const btnClearChat = document.getElementById('btn-clear-chat');
-  const btnThemeToggle = document.getElementById('btn-theme-toggle');
-  const btnLeaveChat = document.getElementById('btn-leave-chat');
-  const chatMessages = document.getElementById('chat-messages');
-  const typingIndicator = document.getElementById('typing-indicator');
-  const typingText = document.getElementById('typing-text');
-  const emojiPicker = document.getElementById('emoji-picker');
-  const btnEmojiToggle = document.getElementById('btn-emoji-toggle');
-  const messageInput = document.getElementById('message-input');
-  const btnSendMessage = document.getElementById('btn-send-message');
-  const messageForm = document.getElementById('message-form');
+  const homeView          = $('home-view');
+  const chatView          = $('chat-view');
+  const userNicknameInput = $('user-nickname-input');
+  const tabCreate         = $('tab-create');
+  const tabJoin           = $('tab-join');
+  const sectionCreate     = $('section-create');
+  const sectionJoin       = $('section-join');
+  const createdCodeDisplay= $('created-code-display');
+  const btnGenerateCode   = $('btn-generate-code');
+  const createActions     = $('create-actions');
+  const btnCopyCode       = $('btn-copy-code');
+  const btnCopyLink       = $('btn-copy-link');
+  const btnEnterChat      = $('btn-enter-chat');
+  const joinCodeInput     = $('join-code-input');
+  const btnJoinRoom       = $('btn-join-room');
 
-  // DOM Elements - Members Modal
-  const membersModal = document.getElementById('members-modal');
-  const btnCloseMembers = document.getElementById('btn-close-members');
-  const membersList = document.getElementById('members-list');
-  const modalMemberCount = document.getElementById('modal-member-count');
-  const modalRoomCodeVal = document.getElementById('modal-room-code-val');
-  const btnModalCopyCode = document.getElementById('btn-modal-copy-code');
-  const btnModalInvite = document.getElementById('btn-modal-invite');
+  const statusIndicator   = $('status-indicator');
+  const statusText        = $('status-text');
+  const badgeMemberCount  = $('badge-member-count');
+  const headerGroupTitle  = $('header-group-title');
+  const btnGroupInfo      = $('btn-group-info');
+  const headerInviteBtn   = $('header-invite-btn');
+  const headerCodePill    = $('header-code-pill');
+  const headerRoomCode    = $('header-room-code');
+  const btnClearChat      = $('btn-clear-chat');
+  const btnThemeToggle    = $('btn-theme-toggle');
+  const btnLeaveChat      = $('btn-leave-chat');
+  const chatMessages      = $('chat-messages');
+  const typingIndicator   = $('typing-indicator');
+  const typingText        = $('typing-text');
+  const emojiPicker       = $('emoji-picker');
+  const btnEmojiToggle    = $('btn-emoji-toggle');
+  const messageInput      = $('message-input');
+  const messageForm       = $('message-form');
+  const membersModal      = $('members-modal');
+  const btnCloseMembers   = $('btn-close-members');
+  const membersList       = $('members-list');
+  const modalMemberCount  = $('modal-member-count');
+  const modalRoomCodeVal  = $('modal-room-code-val');
+  const btnModalCopyCode  = $('btn-modal-copy-code');
+  const btnModalInvite    = $('btn-modal-invite');
+  const toastContainer    = $('toast-container');
+  const connectionBanner  = $('connection-banner');
 
-  // DOM Elements - Toast & Notifications
-  const toastContainer = document.getElementById('toast-container');
-  const connectionBanner = document.getElementById('connection-banner');
-  const iconSun = document.getElementById('icon-sun');
-  const iconMoon = document.getElementById('icon-moon');
-
-  // --- THEME MANAGEMENT (DEFAULTS TO LIGHT THEME) ---
-  function updateThemeUI(isDark) {
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-      document.documentElement.classList.remove('light');
-      if (iconSun) iconSun.classList.remove('hidden');
-      if (iconMoon) iconMoon.classList.add('hidden');
-    } else {
-      document.documentElement.classList.remove('dark');
-      document.documentElement.classList.add('light');
-      if (iconSun) iconSun.classList.add('hidden');
-      if (iconMoon) iconMoon.classList.remove('hidden');
-    }
+  /* ─────────────────────────────────────────
+     THEME
+  ───────────────────────────────────────── */
+  function applyTheme(dark) {
+    document.documentElement.classList.toggle('dark',  dark);
+    document.documentElement.classList.toggle('light', !dark);
+    $('icon-sun')  && $('icon-sun').classList.toggle('hidden', !dark);
+    $('icon-moon') && $('icon-moon').classList.toggle('hidden',  dark);
   }
 
-  const savedTheme = localStorage.getItem('chatling_theme');
-  const isDarkMode = savedTheme === 'dark'; // Light Theme by default
-  updateThemeUI(isDarkMode);
+  applyTheme(localStorage.getItem('chatling_theme') === 'dark');
 
-  if (btnThemeToggle) {
-    btnThemeToggle.addEventListener('click', () => {
-      const isCurrentlyDark = document.documentElement.classList.contains('dark');
-      const nextMode = !isCurrentlyDark;
-      updateThemeUI(nextMode);
-      localStorage.setItem('chatling_theme', nextMode ? 'dark' : 'light');
-    });
-  }
+  btnThemeToggle && btnThemeToggle.addEventListener('click', () => {
+    const next = !document.documentElement.classList.contains('dark');
+    applyTheme(next);
+    localStorage.setItem('chatling_theme', next ? 'dark' : 'light');
+  });
 
-  // --- AUDIO FEEDBACK (Synthesizer Chime) ---
-  function playNotificationSound() {
+  /* ─────────────────────────────────────────
+     AUDIO CHIME
+  ───────────────────────────────────────── */
+  function chime() {
     try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-      const ctx = new AudioCtx();
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      const ctx = new Ctx();
       if (ctx.state === 'suspended') ctx.resume();
-
-      const osc = ctx.createOscillator();
+      const osc  = ctx.createOscillator();
       const gain = ctx.createGain();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
-      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1); // A5
-      gain.gain.setValueAtTime(0.06, ctx.currentTime);
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.05, ctx.currentTime);
       gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
       osc.stop(ctx.currentTime + 0.22);
-    } catch (e) {}
+    } catch (_) {}
   }
 
-  // --- HELPERS ---
-  function getEffectiveNickname() {
-    const val = userNicknameInput ? userNicknameInput.value.trim() : '';
-    if (val) return val.slice(0, 20);
-    return `User ${Math.floor(1000 + Math.random() * 9000)}`;
+  /* ─────────────────────────────────────────
+     HELPERS
+  ───────────────────────────────────────── */
+  function nickname() {
+    const v = userNicknameInput ? userNicknameInput.value.trim() : '';
+    return v ? v.slice(0, 20) : `User${Math.floor(1000 + Math.random() * 9000)}`;
   }
 
-  function showToast(message, type = 'info') {
-    if (!toastContainer) return;
-    const toast = document.createElement('div');
-    const bgColors = {
-      info: 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900',
-      success: 'bg-emerald-600 text-white',
-      error: 'bg-red-600 text-white'
-    };
-
-    toast.className = `${bgColors[type] || bgColors.info} px-4 py-2.5 rounded-2xl shadow-xl text-xs sm:text-sm font-semibold transition-all transform duration-300 translate-y-2 opacity-0 flex items-center gap-2 pointer-events-auto z-50 border border-white/10`;
-    const span = document.createElement('span');
-    span.textContent = message;
-    toast.appendChild(span);
-
-    toastContainer.appendChild(toast);
-
-    setTimeout(() => {
-      toast.classList.remove('translate-y-2', 'opacity-0');
-    }, 10);
-
-    setTimeout(() => {
-      toast.classList.add('opacity-0', '-translate-y-2');
-      setTimeout(() => toast.remove(), 300);
-    }, 3200);
+  function esc(s) {
+    if (!s) return '';
+    return String(s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;').replace(/'/g,'&#039;');
   }
 
-  function switchHomeTab(tab) {
-    if (tab === 'create') {
-      if (tabCreate) {
-        tabCreate.className = 'flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl bg-emerald-500 text-white shadow-sm transition-all cursor-pointer';
-      }
-      if (tabJoin) {
-        tabJoin.className = 'flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer text-slate-600 dark:text-slate-300 hover:text-slate-900';
-      }
-      if (sectionCreate) sectionCreate.classList.remove('hidden');
-      if (sectionJoin) sectionJoin.classList.add('hidden');
-    } else {
-      if (tabJoin) {
-        tabJoin.className = 'flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl bg-emerald-500 text-white shadow-sm transition-all cursor-pointer';
-      }
-      if (tabCreate) {
-        tabCreate.className = 'flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer text-slate-600 dark:text-slate-300 hover:text-slate-900';
-      }
-      if (sectionJoin) sectionJoin.classList.remove('hidden');
-      if (sectionCreate) sectionCreate.classList.add('hidden');
-      if (joinCodeInput) joinCodeInput.focus();
-    }
+  function fmtTime(iso) {
+    return new Date(iso || Date.now()).toLocaleTimeString([], { hour:'2-digit', minute:'2-digit' });
   }
 
-  function escapeHTML(str) {
-    if (!str) return '';
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
-
-  function formatTime(isoString) {
-    const d = isoString ? new Date(isoString) : new Date();
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }
-
-  function scrollToBottom(behavior = 'smooth') {
+  function scrollBottom(smooth = true) {
     if (!chatMessages) return;
     requestAnimationFrame(() => {
-      chatMessages.scrollTo({
-        top: chatMessages.scrollHeight,
-        behavior: behavior
-      });
+      chatMessages.scrollTo({ top: chatMessages.scrollHeight, behavior: smooth ? 'smooth' : 'instant' });
     });
   }
 
-  // --- UI STATUS & ROSTER ---
-  function updateGroupStatus() {
-    const totalCount = groupRoster.length > 0 ? groupRoster.length : 1;
-    if (badgeMemberCount) badgeMemberCount.textContent = totalCount;
-    if (modalMemberCount) modalMemberCount.textContent = `${totalCount} online`;
+  /* ─────────────────────────────────────────
+     TOAST
+  ───────────────────────────────────────── */
+  function toast(msg, type = 'info') {
+    if (!toastContainer) return;
+    const el = document.createElement('div');
+    const bg = { info: 'bg-slate-800 text-white', success: 'bg-emerald-600 text-white', error: 'bg-red-600 text-white' };
+    el.className = `${bg[type] || bg.info} px-4 py-2.5 rounded-2xl shadow-xl text-xs sm:text-sm font-semibold transition-all transform duration-300 translate-y-2 opacity-0 pointer-events-auto border border-white/10`;
+    el.textContent = msg;
+    toastContainer.appendChild(el);
+    requestAnimationFrame(() => {
+      el.classList.remove('translate-y-2', 'opacity-0');
+    });
+    setTimeout(() => {
+      el.classList.add('opacity-0', '-translate-y-2');
+      setTimeout(() => el.remove(), 300);
+    }, 3200);
+  }
 
+  /* ─────────────────────────────────────────
+     TABS (HOME)
+  ───────────────────────────────────────── */
+  function switchTab(tab) {
+    const isCreate = tab === 'create';
+    const activeClass  = 'flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl bg-emerald-500 text-white shadow-sm transition-all cursor-pointer';
+    const inactiveClass = 'flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white';
+
+    if (tabCreate) tabCreate.className = isCreate ? activeClass : inactiveClass;
+    if (tabJoin)   tabJoin.className   = isCreate ? inactiveClass : activeClass;
+    sectionCreate && sectionCreate.classList.toggle('hidden', !isCreate);
+    sectionJoin   && sectionJoin.classList.toggle('hidden',    isCreate);
+    if (!isCreate && joinCodeInput) joinCodeInput.focus();
+  }
+
+  tabCreate && tabCreate.addEventListener('click', () => switchTab('create'));
+  tabJoin   && tabJoin.addEventListener('click',   () => switchTab('join'));
+
+  /* ─────────────────────────────────────────
+     ROSTER & STATUS UI
+  ───────────────────────────────────────── */
+  function updateStatus() {
+    const count = roster.length || 1;
+    if (badgeMemberCount) badgeMemberCount.textContent = count;
+    if (modalMemberCount) modalMemberCount.textContent = `${count} online`;
     if (!statusIndicator || !statusText) return;
 
-    if (totalCount > 1) {
-      statusIndicator.className = 'absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-wa-green border-2 border-white dark:border-slate-900 status-pulse';
-      const otherNames = groupRoster.filter(m => m.id !== myPeerId).map(m => m.name);
-      if (otherNames.length === 1) {
-        statusText.textContent = `${otherNames[0]} is online`;
-      } else if (otherNames.length === 2) {
-        statusText.textContent = `${otherNames[0]}, ${otherNames[1]} online`;
-      } else {
-        statusText.textContent = `${otherNames[0]} & ${otherNames.length - 1} others online`;
-      }
-      statusText.className = 'text-[10px] sm:text-xs text-wa-green font-medium truncate';
+    if (count > 1) {
+      statusIndicator.className = 'absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900 status-pulse';
+      const others = roster.filter(m => m.id !== myPeerId).map(m => m.name);
+      statusText.textContent = others.length === 1
+        ? `${others[0]} is online`
+        : others.length === 2
+        ? `${others[0]}, ${others[1]} online`
+        : `${others[0]} & ${others.length - 1} others online`;
+      statusText.className = 'text-[10px] sm:text-xs text-emerald-500 font-medium truncate';
     } else {
       statusIndicator.className = 'absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-amber-500 border-2 border-white dark:border-slate-900';
       statusText.textContent = 'Waiting for friends to join...';
       statusText.className = 'text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium truncate';
     }
 
-    renderMembersList();
+    renderMembers();
   }
 
-  function renderMembersList() {
+  function renderMembers() {
     if (!membersList) return;
     membersList.innerHTML = '';
 
-    if (groupRoster.length === 0) {
-      const li = document.createElement('li');
-      li.className = 'flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800';
-      li.innerHTML = `
+    const list = roster.length ? roster : [{ id: myPeerId, name: myNickname, isHost }];
+    list.forEach(m => {
+      const isSelf  = m.id === myPeerId;
+      const color   = isSelf ? '#10b981' : nameColor(m.name);
+      const initial = esc((m.name || 'M').charAt(0).toUpperCase());
+      const role    = m.isHost ? 'Host' : (isSelf ? 'You' : 'Member');
+      const li      = document.createElement('li');
+      li.className  = 'flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800';
+      li.innerHTML  = `
         <div class="flex items-center gap-2.5 min-w-0">
-          <div class="w-8 h-8 rounded-full bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
-            ${escapeHTML(myNickname.charAt(0).toUpperCase())}
-          </div>
+          <div class="w-8 h-8 rounded-full text-white font-bold text-xs flex items-center justify-center shrink-0" style="background-color:${color}">${initial}</div>
           <div class="min-w-0">
-            <p class="text-xs font-bold text-slate-900 dark:text-white truncate">${escapeHTML(myNickname)} (You)</p>
-            <p class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">${isHost ? 'Group Host' : 'Member'}</p>
-          </div>
-        </div>
-        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
-      `;
-      membersList.appendChild(li);
-      return;
-    }
-
-    groupRoster.forEach(member => {
-      const isSelf = member.id === myPeerId;
-      const color = isSelf ? '#10b981' : getSenderColor(member.name);
-      const initial = escapeHTML((member.name || 'M').charAt(0).toUpperCase());
-      const roleLabel = member.isHost ? 'Group Host' : (isSelf ? 'You' : 'Member');
-
-      const li = document.createElement('li');
-      li.className = 'flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800';
-      li.innerHTML = `
-        <div class="flex items-center gap-2.5 min-w-0">
-          <div class="w-8 h-8 rounded-full text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs" style="background-color: ${color}">
-            ${initial}
-          </div>
-          <div class="min-w-0">
-            <p class="text-xs font-bold text-slate-900 dark:text-white truncate">
-              ${escapeHTML(member.name)} ${isSelf ? '<span class="text-slate-400 font-normal">(You)</span>' : ''}
-            </p>
-            <p class="text-[10px] ${member.isHost ? 'text-amber-500 font-bold' : 'text-slate-400 dark:text-slate-500'}">${roleLabel}</p>
+            <p class="text-xs font-bold text-slate-900 dark:text-white truncate">${esc(m.name)}${isSelf ? ' <span class="text-slate-400 font-normal">(You)</span>' : ''}</p>
+            <p class="text-[10px] ${m.isHost ? 'text-amber-500 font-bold' : 'text-slate-400 dark:text-slate-500'}">${role}</p>
           </div>
         </div>
         <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
@@ -325,846 +271,643 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function enterChatView(code) {
+  /* ─────────────────────────────────────────
+     ENTER / LEAVE CHAT VIEW
+  ───────────────────────────────────────── */
+  function enterChat(code) {
     currentRoomCode = code;
-    if (homeView) homeView.classList.add('hidden');
-    if (chatView) chatView.classList.remove('hidden');
-    if (headerGroupTitle) headerGroupTitle.textContent = `Group #${code}`;
-    if (headerRoomCode) headerRoomCode.textContent = code;
-    if (modalRoomCodeVal) modalRoomCodeVal.textContent = code;
-    if (headerCodePill) headerCodePill.classList.remove('hidden');
-    if (messageInput) messageInput.focus();
-    updateGroupStatus();
-
+    homeView  && homeView.classList.add('hidden');
+    chatView  && chatView.classList.remove('hidden');
+    if (headerGroupTitle) headerGroupTitle.textContent = `Room #${code}`;
+    if (headerRoomCode)   headerRoomCode.textContent   = code;
+    if (modalRoomCodeVal) modalRoomCodeVal.textContent  = code;
+    messageInput && messageInput.focus();
+    updateStatus();
+    startHeartbeat();
     if (window.history && window.history.pushState) {
       window.history.pushState({ inChat: true, room: code }, '', `?room=${code}`);
     }
-
-    startHeartbeat();
   }
 
   window.addEventListener('popstate', () => {
-    if (chatView && !chatView.classList.contains('hidden')) {
-      leaveChatRoom(false);
-    }
+    if (chatView && !chatView.classList.contains('hidden')) leaveRoom(false);
   });
 
-  // --- WHATSAPP MESSAGE BUBBLE RENDERING ---
-  function appendMessage({ id, senderName, senderId, content, isOutgoing, timestamp, status = 'sent' }) {
-    if (!chatMessages) return;
-    if (document.getElementById(`msg-wrap-${id}`)) return;
+  function leaveRoom(confirm = true) {
+    if (confirm && !window.confirm('Leave this group chat?')) return;
 
-    const wrapper = document.createElement('div');
-    wrapper.id = `msg-wrap-${id}`;
-    
-    const contentHtml = escapeHTML(content).replace(/\n/g, '<br>');
-    const timeStr = formatTime(timestamp);
+    stopHeartbeat();
 
-    let statusTicks = '';
-    if (isOutgoing) {
-      if (status === 'delivered') {
-        // WhatsApp Double Blue Ticks
-        statusTicks = `<svg class="w-3.5 h-3.5 text-[#53bdeb] inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7M5 7l4 4L19 1"/></svg>`;
-      } else {
-        // WhatsApp Single Tick
-        statusTicks = `<svg class="w-3.5 h-3.5 text-slate-400 dark:text-slate-400 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>`;
-      }
+    if (isHost) {
+      broadcast({ type: 'host-closed' });
+    } else if (hostConn && hostConn.open) {
+      try { hostConn.send({ type: 'leave', senderId: myPeerId, nickname: myNickname }); } catch (_) {}
     }
 
+    peers.forEach(p => { try { p.conn.close(); } catch (_) {} });
+    peers.clear();
+    if (hostConn) { try { hostConn.close(); } catch (_) {} hostConn = null; }
+    if (peer)     { try { peer.destroy();  } catch (_) {} peer = null; }
+
+    roster        = [];
+    currentRoomCode = null;
+    isHost        = false;
+    seenMsgIds.clear();
+    activeTypers.clear();
+    isTyping      = false;
+
+    chatView  && chatView.classList.add('hidden');
+    homeView  && homeView.classList.remove('hidden');
+    createActions && createActions.classList.add('hidden');
+    btnGenerateCode && btnGenerateCode.classList.remove('hidden');
+    if (createdCodeDisplay) createdCodeDisplay.textContent = '------';
+    if (joinCodeInput)      joinCodeInput.value = '';
+
+    // Clear messages
+    chatMessages && chatMessages.querySelectorAll('.msg-row-out,.msg-row-in,.sys-banner').forEach(el => el.remove());
+
+    if (window.history && window.history.replaceState)
+      window.history.replaceState({}, '', window.location.pathname);
+
+    toast('You left the chat.', 'info');
+  }
+
+  /* ─────────────────────────────────────────
+     MESSAGE RENDERING
+  ───────────────────────────────────────── */
+  function renderMessage({ id, senderName, senderId, content, isOutgoing, timestamp, status = 'sent' }) {
+    if (!chatMessages) return;
+    if (document.getElementById(`msg-${id}`)) return;
+
+    const htmlContent = esc(content).replace(/\n/g, '<br>');
+    const time        = fmtTime(timestamp);
+
+    const tickSent = `<svg class="w-3.5 h-3.5 text-slate-400 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>`;
+    const tickDbl  = `<svg class="w-3.5 h-3.5 text-[#53bdeb] inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7M5 7l4 4L19 1"/></svg>`;
+
+    const row = document.createElement('div');
+    row.id    = `msg-${id}`;
+
     if (isOutgoing) {
-      // WhatsApp Outgoing Bubble: Right aligned, soft green, bottom-right time & ticks
-      wrapper.className = 'flex items-end justify-end my-1 w-full';
-      wrapper.innerHTML = `
-        <div class="bubble bubble-out py-1.5 px-3 rounded-xl text-xs sm:text-sm max-w-[85%] sm:max-w-[70%] shadow-xs">
-          <div class="leading-relaxed break-words overflow-wrap-anywhere">${contentHtml}</div>
-          <div class="flex items-center justify-end gap-1 text-[10px] text-slate-500 dark:text-slate-300 mt-0.5 select-none font-medium">
-            <span>${timeStr}</span>
-            <span class="tick-icon">${statusTicks}</span>
+      row.className = 'msg-row-out';
+      row.innerHTML = `
+        <div class="bubble bubble-out py-1.5 px-3 text-xs sm:text-sm">
+          <div class="leading-relaxed">${htmlContent}</div>
+          <div class="flex items-center justify-end gap-0.5 text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 select-none">
+            <span>${time}</span>
+            <span class="tick-icon">${status === 'delivered' ? tickDbl : tickSent}</span>
           </div>
-        </div>
-      `;
+        </div>`;
     } else {
-      // WhatsApp Incoming Bubble: Left aligned, pure white, author name colored
-      const name = senderName || 'Member';
-      const nameColor = getSenderColor(name);
-
-      wrapper.className = 'flex items-end justify-start my-1 w-full';
-      wrapper.innerHTML = `
-        <div class="bubble bubble-in py-1.5 px-3 rounded-xl text-xs sm:text-sm max-w-[85%] sm:max-w-[70%] shadow-xs">
-          <div class="text-[11px] font-bold mb-0.5 select-none" style="color: ${nameColor}">
-            ${escapeHTML(name)}
+      const color = nameColor(senderName || '');
+      row.className = 'msg-row-in';
+      row.innerHTML = `
+        <div class="bubble bubble-in py-1.5 px-3 text-xs sm:text-sm">
+          <div class="text-[11px] font-bold mb-0.5 select-none" style="color:${color}">${esc(senderName || 'Member')}</div>
+          <div class="leading-relaxed text-slate-900 dark:text-slate-100">${htmlContent}</div>
+          <div class="flex items-center justify-end text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 select-none">
+            <span>${time}</span>
           </div>
-          <div class="leading-relaxed break-words overflow-wrap-anywhere text-slate-900 dark:text-slate-100">${contentHtml}</div>
-          <div class="flex items-center justify-end gap-1 text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 select-none font-medium">
-            <span>${timeStr}</span>
-          </div>
-        </div>
-      `;
+        </div>`;
     }
 
-    chatMessages.appendChild(wrapper);
-    scrollToBottom();
+    // Insert before bottom anchor
+    const anchor = $('messages-bottom-anchor');
+    if (anchor) chatMessages.insertBefore(row, anchor);
+    else chatMessages.appendChild(row);
+
+    scrollBottom();
   }
 
-  function appendSystemBanner(message) {
+  function markDelivered(msgId) {
+    const el = document.getElementById(`msg-${msgId}`);
+    if (!el) return;
+    const tick = el.querySelector('.tick-icon');
+    if (tick) tick.innerHTML = `<svg class="w-3.5 h-3.5 text-[#53bdeb] inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7M5 7l4 4L19 1"/></svg>`;
+  }
+
+  function renderSystem(msg) {
     if (!chatMessages) return;
-    const banner = document.createElement('div');
-    banner.className = 'flex justify-center my-1.5 select-none';
-    banner.innerHTML = `
-      <div class="bg-white/90 dark:bg-slate-800/90 text-slate-600 dark:text-slate-300 text-[10px] sm:text-xs px-3 py-1 rounded-full shadow-2xs backdrop-blur-sm max-w-[90%] text-center truncate border border-slate-200/50 dark:border-slate-700/50">
-        ${escapeHTML(message)}
-      </div>
-    `;
-    chatMessages.appendChild(banner);
-    scrollToBottom();
+    const div = document.createElement('div');
+    div.className = 'sys-banner';
+    div.innerHTML = `<div class="sys-banner-inner">${esc(msg)}</div>`;
+    const anchor = $('messages-bottom-anchor');
+    if (anchor) chatMessages.insertBefore(div, anchor);
+    else chatMessages.appendChild(div);
+    scrollBottom();
   }
 
-  function markMessageDelivered(msgId) {
-    const wrap = document.getElementById(`msg-wrap-${msgId}`);
-    if (wrap) {
-      const tickSpan = wrap.querySelector('.tick-icon');
-      if (tickSpan) {
-        tickSpan.innerHTML = `<svg class="w-3.5 h-3.5 text-[#53bdeb] inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7M5 7l4 4L19 1"/></svg>`;
-      }
-    }
-  }
-
-  function updateTypingDisplay() {
+  /* ─────────────────────────────────────────
+     TYPING DISPLAY
+  ───────────────────────────────────────── */
+  function updateTyping() {
     if (!typingIndicator || !typingText) return;
-    const typers = Array.from(activeTypers.values()).map(t => t.nickname);
-    if (typers.length === 0) {
+    const names = [...activeTypers.values()].map(t => t.nickname);
+    if (!names.length) {
       typingIndicator.classList.add('hidden');
-    } else if (typers.length === 1) {
-      typingText.textContent = `${typers[0]} is typing`;
-      typingIndicator.classList.remove('hidden');
-      scrollToBottom();
-    } else if (typers.length === 2) {
-      typingText.textContent = `${typers[0]} and ${typers[1]} are typing`;
-      typingIndicator.classList.remove('hidden');
-      scrollToBottom();
     } else {
-      typingText.textContent = `${typers[0]} and ${typers.length - 1} others are typing`;
+      typingText.textContent = names.length === 1
+        ? `${names[0]} is typing`
+        : names.length === 2
+        ? `${names[0]} and ${names[1]} are typing`
+        : `${names[0]} and ${names.length - 1} others are typing`;
       typingIndicator.classList.remove('hidden');
-      scrollToBottom();
     }
   }
 
-  // --- WEBRTC PEER CONNECTION ENGINE ---
+  function handleTyping(data) {
+    if (!data || !data.senderId) return;
+    if (data.type === 'typing') {
+      if (activeTypers.has(data.senderId)) clearTimeout(activeTypers.get(data.senderId).timer);
+      const timer = setTimeout(() => { activeTypers.delete(data.senderId); updateTyping(); }, 3500);
+      activeTypers.set(data.senderId, { nickname: data.nickname || 'Someone', timer });
+    } else {
+      if (activeTypers.has(data.senderId)) clearTimeout(activeTypers.get(data.senderId).timer);
+      activeTypers.delete(data.senderId);
+    }
+    updateTyping();
+  }
 
-  // Host: Broadcast to all connected participants
-  function broadcastToAll(payload, excludePeerId = null) {
-    connectedPeers.forEach((data, pId) => {
-      if (pId !== excludePeerId && data.conn && data.conn.open) {
-        try {
-          data.conn.send(payload);
-        } catch (e) {
-          console.warn(`[BROADCAST] Failed to send to ${pId}:`, e);
-        }
+  /* ─────────────────────────────────────────
+     WEBRTC – BROADCAST (HOST ONLY)
+  ───────────────────────────────────────── */
+  function broadcast(payload, excludeId = null) {
+    peers.forEach((p, id) => {
+      if (id !== excludeId && p.conn && p.conn.open) {
+        try { p.conn.send(payload); } catch (_) {}
       }
     });
   }
 
-  // --- ROOM CODE GENERATION (100% INSTANT SYNCHRONOUS CLICK) ---
-  function handleGenerateRoom() {
-    myNickname = getEffectiveNickname();
-    isHost = true;
-
-    // 1. Generate 6-digit room code INSTANTLY (0 ms latency)
-    const roomCode = Math.floor(100000 + Math.random() * 900000).toString();
-    currentRoomCode = roomCode;
-
-    // 2. Update UI Immediately
-    if (createdCodeDisplay) createdCodeDisplay.textContent = roomCode;
-    if (createActions) createActions.classList.remove('hidden');
-    if (btnGenerateCode) btnGenerateCode.classList.add('hidden');
-    showToast(`Room #${roomCode} generated! Share code or enter chat.`, 'success');
-
-    // 3. Initialize WebRTC Host Session
-    initHostSession(roomCode);
-  }
-
-  function initHostSession(roomCode) {
-    const hostPeerId = `chatling-${roomCode}`;
-
-    if (peer) {
-      try { peer.destroy(); } catch (e) {}
-    }
-
-    if (typeof Peer === 'undefined') {
-      console.warn('PeerJS library loading...');
-      return;
-    }
-
-    try {
-      peer = new Peer(hostPeerId, PEER_CONFIG);
-
-      peer.on('open', (id) => {
-        myPeerId = id;
-        groupRoster = [{ id: myPeerId, name: myNickname, isHost: true }];
-        console.log(`[HOST] Group Host active with ID: ${id}`);
-      });
-
-      peer.on('connection', (conn) => {
-        const joinerId = conn.peer;
-
-        conn.on('open', () => {
-          console.log(`[HOST] Joiner connected: ${joinerId}`);
-        });
-
-        conn.on('data', (data) => {
-          if (!data || !data.type) return;
-
-          // Join request from participant
-          if (data.type === 'join-request') {
-            const joinerName = (data.nickname || 'Member').slice(0, 20);
-
-            connectedPeers.set(data.senderId, {
-              conn,
-              nickname: joinerName,
-              isHost: false
-            });
-
-            groupRoster = groupRoster.filter(m => m.id !== data.senderId);
-            groupRoster.push({
-              id: data.senderId,
-              name: joinerName,
-              isHost: false
-            });
-
-            // Approve joiner and send current roster
-            try {
-              conn.send({
-                type: 'join-approved',
-                roomCode: currentRoomCode,
-                members: groupRoster,
-                hostName: myNickname
-              });
-            } catch (e) {}
-
-            // Broadcast new member to everyone else
-            broadcastToAll({
-              type: 'member-joined',
-              member: { id: data.senderId, name: joinerName },
-              members: groupRoster
-            }, data.senderId);
-
-            showToast(`${joinerName} joined the group!`, 'success');
-            appendSystemBanner(`${joinerName} joined the group`);
-            updateGroupStatus();
-            playNotificationSound();
-            return;
-          }
-
-          // Group Message from participant (Host relays to all others)
-          if (data.type === 'chat') {
-            if (!seenMessageIds.has(data.id)) {
-              seenMessageIds.add(data.id);
-
-              appendMessage({
-                id: data.id,
-                senderName: data.senderName,
-                senderId: data.senderId,
-                content: data.content,
-                isOutgoing: false,
-                timestamp: data.timestamp
-              });
-
-              playNotificationSound();
-
-              // Relay to all other members
-              broadcastToAll(data, data.senderId);
-
-              // Acknowledge delivery
-              try { conn.send({ type: 'ack', id: data.id }); } catch (e) {}
-            }
-            return;
-          }
-
-          // Typing indicators
-          if (data.type === 'typing' || data.type === 'stop-typing') {
-            handleIncomingTyping(data);
-            broadcastToAll(data, data.senderId);
-            return;
-          }
-
-          // Member leaves
-          if (data.type === 'leave') {
-            handleMemberDeparture(data.senderId, data.nickname);
-            return;
-          }
-        });
-
-        conn.on('close', () => {
-          handleMemberDeparture(joinerId);
-        });
-
-        conn.on('error', (err) => {
-          console.warn(`[HOST] Conn error with ${joinerId}:`, err);
-        });
-      });
-
-      peer.on('error', (err) => {
-        console.warn('[HOST] Peer error:', err);
-        if (err.type === 'unavailable-id') {
-          // Room collision: regenerate code
-          handleGenerateRoom();
-        }
-      });
-    } catch (e) {
-      console.error('[HOST] Init error:', e);
-    }
-  }
-
-  // --- JOINING ROOM (MEMBER ROLE) ---
-  function handleJoinRoom() {
-    if (!joinCodeInput) return;
-    const code = joinCodeInput.value.trim();
-    if (!/^\d{6}$/.test(code)) {
-      showToast('Please enter a valid 6-digit room code.', 'error');
-      return;
-    }
-
-    myNickname = getEffectiveNickname();
-    isHost = false;
-    currentRoomCode = code;
-
-    showToast(`Connecting to group #${code}...`, 'info');
-
-    if (peer) {
-      try { peer.destroy(); } catch (e) {}
-    }
+  /* ─────────────────────────────────────────
+     HOST SESSION
+  ───────────────────────────────────────── */
+  function startHostSession(code) {
+    if (peer) { try { peer.destroy(); } catch (_) {} peer = null; }
+    if (typeof Peer === 'undefined') { toast('PeerJS library failed to load. Please refresh.', 'error'); return; }
 
     const hostPeerId = `chatling-${code}`;
-
     try {
-      peer = new Peer(PEER_CONFIG);
+      peer = new Peer(hostPeerId, PEER_CONFIG);
+    } catch (e) {
+      toast('Failed to init WebRTC. Please refresh.', 'error');
+      return;
+    }
 
-      peer.on('open', (id) => {
-        myPeerId = id;
-        console.log(`[MEMBER] My peer ID: ${id}`);
+    peer.on('open', id => {
+      myPeerId = id;
+      roster = [{ id: myPeerId, name: myNickname, isHost: true }];
+      console.log('[HOST] Active with ID:', id);
+    });
 
-        // Connect to host
-        hostConnection = peer.connect(hostPeerId, { reliable: true });
+    peer.on('connection', conn => {
+      const joinerId = conn.peer;
 
-        hostConnection.on('open', () => {
-          // Send join request
-          hostConnection.send({
-            type: 'join-request',
-            senderId: myPeerId,
-            nickname: myNickname
-          });
-        });
-
-        hostConnection.on('data', (data) => {
-          if (!data || !data.type) return;
-
-          // 1. Join Approved
-          if (data.type === 'join-approved') {
-            groupRoster = Array.isArray(data.members) ? data.members : [];
-            enterChatView(code);
-            showToast(`Joined Group #${code}!`, 'success');
-            appendSystemBanner(`Joined Group #${code}`);
-            updateGroupStatus();
-            return;
-          }
-
-          // 2. Another Member Joined
-          if (data.type === 'member-joined') {
-            if (Array.isArray(data.members)) groupRoster = data.members;
-            const joinerName = data.member ? data.member.name : 'A member';
-            showToast(`${joinerName} joined the group!`, 'success');
-            appendSystemBanner(`${joinerName} joined the group`);
-            updateGroupStatus();
-            playNotificationSound();
-            return;
-          }
-
-          // 3. Incoming Chat Message
-          if (data.type === 'chat') {
-            if (!seenMessageIds.has(data.id)) {
-              seenMessageIds.add(data.id);
-              appendMessage({
-                id: data.id,
-                senderName: data.senderName,
-                senderId: data.senderId,
-                content: data.content,
-                isOutgoing: false,
-                timestamp: data.timestamp
-              });
-              playNotificationSound();
-            }
-            return;
-          }
-
-          // 4. Delivery Ack
-          if (data.type === 'ack') {
-            markMessageDelivered(data.id);
-            return;
-          }
-
-          // 5. Typing Indicators
-          if (data.type === 'typing' || data.type === 'stop-typing') {
-            handleIncomingTyping(data);
-            return;
-          }
-
-          // 6. Member Left
-          if (data.type === 'member-left') {
-            if (Array.isArray(data.members)) groupRoster = data.members;
-            const leftName = data.nickname || 'A member';
-            showToast(`${leftName} left the group.`, 'info');
-            appendSystemBanner(`${leftName} left the group`);
-            updateGroupStatus();
-            return;
-          }
-
-          // 7. Host Closed
-          if (data.type === 'host-closed') {
-            showToast('The group host has ended the room.', 'info');
-            leaveChatRoom(false);
-            return;
-          }
-        });
-
-        hostConnection.on('close', () => {
-          showToast('Disconnected from group host.', 'info');
-          appendSystemBanner('Connection to group host lost');
-        });
-
-        hostConnection.on('error', (err) => {
-          console.warn('[MEMBER] Host conn error:', err);
-        });
+      conn.on('open', () => {
+        console.log('[HOST] Joiner connected:', joinerId);
       });
 
-      peer.on('error', (err) => {
-        console.warn('[MEMBER] Peer error:', err);
-        if (err.type === 'peer-unavailable') {
-          showToast(`Group #${code} not found or host is offline.`, 'error');
-        } else {
-          showToast(`Connection notice: ${err.type || 'network issue'}`, 'info');
+      conn.on('data', data => {
+        if (!data || !data.type) return;
+
+        if (data.type === 'join-request') {
+          const jName = (data.nickname || 'Member').slice(0, 20);
+          peers.set(data.senderId, { conn, nickname: jName });
+          roster = roster.filter(m => m.id !== data.senderId);
+          roster.push({ id: data.senderId, name: jName, isHost: false });
+
+          // Approve
+          try {
+            conn.send({ type: 'join-approved', roomCode: currentRoomCode, members: roster, hostName: myNickname });
+          } catch (_) {}
+
+          // Notify others
+          broadcast({ type: 'member-joined', member: { id: data.senderId, name: jName }, members: roster }, data.senderId);
+
+          toast(`${jName} joined!`, 'success');
+          renderSystem(`${jName} joined the group`);
+          updateStatus();
+          chime();
+          return;
+        }
+
+        if (data.type === 'chat') {
+          if (!seenMsgIds.has(data.id)) {
+            seenMsgIds.add(data.id);
+            renderMessage({ id: data.id, senderName: data.senderName, senderId: data.senderId, content: data.content, isOutgoing: false, timestamp: data.timestamp });
+            chime();
+            broadcast(data, data.senderId);
+            try { conn.send({ type: 'ack', id: data.id }); } catch (_) {}
+          }
+          return;
+        }
+
+        if (data.type === 'typing' || data.type === 'stop-typing') {
+          handleTyping(data);
+          broadcast(data, data.senderId);
+          return;
+        }
+
+        if (data.type === 'leave') {
+          onMemberLeft(data.senderId, data.nickname);
+          return;
         }
       });
 
-    } catch (e) {
-      console.error('[MEMBER] Init error:', e);
-    }
+      conn.on('close', () => onMemberLeft(joinerId));
+      conn.on('error', err => console.warn('[HOST] conn err:', err));
+    });
+
+    peer.on('error', err => {
+      console.warn('[HOST] peer err:', err);
+      if (err.type === 'unavailable-id') {
+        // Room code collision – regenerate
+        generateRoom();
+      } else {
+        toast(`WebRTC error: ${err.type}`, 'error');
+      }
+    });
+
+    peer.on('disconnected', () => {
+      console.warn('[HOST] Disconnected from broker. Attempting reconnect...');
+      try { peer.reconnect(); } catch (_) {}
+    });
   }
 
-  function handleIncomingTyping(data) {
-    if (!data || !data.senderId) return;
-
-    if (data.type === 'typing') {
-      const name = data.nickname || 'Someone';
-      if (activeTypers.has(data.senderId)) {
-        clearTimeout(activeTypers.get(data.senderId).timer);
-      }
-      const timer = setTimeout(() => {
-        activeTypers.delete(data.senderId);
-        updateTypingDisplay();
-      }, 3500);
-
-      activeTypers.set(data.senderId, { nickname: name, timer });
-      updateTypingDisplay();
-    } else if (data.type === 'stop-typing') {
-      if (activeTypers.has(data.senderId)) {
-        clearTimeout(activeTypers.get(data.senderId).timer);
-        activeTypers.delete(data.senderId);
-      }
-      updateTypingDisplay();
-    }
-  }
-
-  function handleMemberDeparture(peerId, explicitName = null) {
-    if (!connectedPeers.has(peerId)) return;
-    const pData = connectedPeers.get(peerId);
-    const departedName = explicitName || (pData ? pData.nickname : 'A participant');
-
-    connectedPeers.delete(peerId);
-    groupRoster = groupRoster.filter(m => m.id !== peerId);
-
+  function onMemberLeft(peerId, explicitName = null) {
+    if (!peers.has(peerId)) return;
+    const name = explicitName || peers.get(peerId).nickname || 'A participant';
+    peers.delete(peerId);
+    roster = roster.filter(m => m.id !== peerId);
     if (activeTypers.has(peerId)) {
       clearTimeout(activeTypers.get(peerId).timer);
       activeTypers.delete(peerId);
-      updateTypingDisplay();
+      updateTyping();
     }
-
-    updateGroupStatus();
-    appendSystemBanner(`${departedName} left the group`);
-    showToast(`${departedName} left the group.`, 'info');
-
-    broadcastToAll({
-      type: 'member-left',
-      memberId: peerId,
-      nickname: departedName,
-      members: groupRoster
-    });
+    updateStatus();
+    renderSystem(`${name} left the group`);
+    toast(`${name} left.`, 'info');
+    broadcast({ type: 'member-left', memberId: peerId, nickname: name, members: roster });
   }
 
-  function startHeartbeat() {
-    stopHeartbeat();
-    heartbeatInterval = setInterval(() => {
-      if (isHost) {
-        broadcastToAll({ type: 'ping' });
-      } else if (hostConnection && hostConnection.open) {
-        try { hostConnection.send({ type: 'ping' }); } catch (e) {}
-      }
-    }, 15000);
+  /* ─────────────────────────────────────────
+     GENERATE ROOM (HOST)
+  ───────────────────────────────────────── */
+  function generateRoom() {
+    myNickname = nickname();
+    isHost     = true;
+
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    currentRoomCode = code;
+
+    if (createdCodeDisplay) createdCodeDisplay.textContent = code;
+    if (createActions)      createActions.classList.remove('hidden');
+    if (btnGenerateCode)    btnGenerateCode.classList.add('hidden');
+    toast(`Room #${code} created! Share the code.`, 'success');
+
+    startHostSession(code);
   }
 
-  function stopHeartbeat() {
-    if (heartbeatInterval) {
-      clearInterval(heartbeatInterval);
-      heartbeatInterval = null;
-    }
-  }
+  btnGenerateCode && btnGenerateCode.addEventListener('click', generateRoom);
 
-  // --- EVENT LISTENERS ---
-
-  if (btnGenerateCode) btnGenerateCode.addEventListener('click', handleGenerateRoom);
-
-  if (btnCopyCode) {
-    btnCopyCode.addEventListener('click', () => {
-      if (currentRoomCode) {
-        navigator.clipboard.writeText(currentRoomCode);
-        showToast('Room code copied to clipboard!', 'info');
-      }
-    });
-  }
-
-  async function shareOrCopyInvite() {
-    if (!currentRoomCode) return;
-    const shareUrl = `${window.location.origin}${window.location.pathname}?room=${currentRoomCode}`;
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: 'Join our private group chat on Chatling',
-          text: `Join my private group chat on Chatling (Room: ${currentRoomCode})`,
-          url: shareUrl
-        });
-        return;
-      } catch (err) {
-        if (err.name === 'AbortError') return;
-      }
-    }
-    navigator.clipboard.writeText(shareUrl);
-    showToast('Direct group invite link copied to clipboard!', 'info');
-  }
-
-  if (btnCopyLink) btnCopyLink.addEventListener('click', shareOrCopyInvite);
-  if (headerInviteBtn) headerInviteBtn.addEventListener('click', shareOrCopyInvite);
-  if (btnModalInvite) btnModalInvite.addEventListener('click', shareOrCopyInvite);
-
-  if (btnModalCopyCode) {
-    btnModalCopyCode.addEventListener('click', () => {
-      if (currentRoomCode) {
-        navigator.clipboard.writeText(currentRoomCode);
-        showToast(`Room Code ${currentRoomCode} copied!`, 'info');
-      }
-    });
-  }
-
-  if (btnEnterChat) {
-    btnEnterChat.addEventListener('click', () => {
-      if (currentRoomCode) {
-        enterChatView(currentRoomCode);
-      }
-    });
-  }
-
-  if (btnJoinRoom) btnJoinRoom.addEventListener('click', handleJoinRoom);
-
-  if (joinCodeInput) {
-    joinCodeInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        handleJoinRoom();
-      }
-    });
-  }
-
-  // Auto-join from URL parameter ?room=XXXXXX
-  const urlParams = new URLSearchParams(window.location.search);
-  const roomParam = urlParams.get('room');
-  if (roomParam && /^\d{6}$/.test(roomParam)) {
-    switchHomeTab('join');
-    if (joinCodeInput) joinCodeInput.value = roomParam;
-    setTimeout(() => {
-      handleJoinRoom();
-    }, 400);
-  }
-
-  // Home Navigation Tabs
-  if (tabCreate) tabCreate.addEventListener('click', () => switchHomeTab('create'));
-  if (tabJoin) tabJoin.addEventListener('click', () => switchHomeTab('join'));
-
-  // Group Members Modal
-  if (btnGroupInfo && membersModal) {
-    btnGroupInfo.addEventListener('click', () => {
-      renderMembersList();
-      membersModal.classList.remove('hidden');
-    });
-  }
-
-  if (btnCloseMembers && membersModal) {
-    btnCloseMembers.addEventListener('click', () => {
-      membersModal.classList.add('hidden');
-    });
-  }
-
-  if (membersModal) {
-    membersModal.addEventListener('click', (e) => {
-      if (e.target === membersModal) {
-        membersModal.classList.add('hidden');
-      }
-    });
-  }
-
-  // Header Room Code Pill
-  if (headerCodePill) {
-    headerCodePill.addEventListener('click', () => {
-      if (currentRoomCode) {
-        navigator.clipboard.writeText(currentRoomCode);
-        showToast(`Room Code ${currentRoomCode} copied!`, 'info');
-      }
-    });
-  }
-
-  // Clear Chat Button
-  if (btnClearChat) {
-    btnClearChat.addEventListener('click', () => {
-      if (!confirm('Clear all messages from your device?')) return;
-      if (chatMessages) {
-        const banners = chatMessages.querySelectorAll('div[id^="msg-wrap-"]');
-        banners.forEach(b => b.remove());
-        showToast('Chat history cleared locally.', 'info');
-      }
-    });
-  }
-
-  // Leave Group Room
-  function leaveChatRoom(shouldConfirm = true) {
-    if (shouldConfirm && !confirm('Are you sure you want to leave this group chat?')) {
+  /* ─────────────────────────────────────────
+     JOIN ROOM (MEMBER)
+  ───────────────────────────────────────── */
+  function joinRoom() {
+    if (!joinCodeInput) return;
+    const code = joinCodeInput.value.trim();
+    if (!/^\d{6}$/.test(code)) {
+      toast('Enter a valid 6-digit code.', 'error');
+      joinCodeInput.focus();
       return;
     }
 
-    if (isHost) {
-      broadcastToAll({
-        type: 'host-closed',
-        message: 'The group host has ended the chat.'
+    myNickname = nickname();
+    isHost     = false;
+    currentRoomCode = code;
+    toast(`Connecting to room #${code}…`, 'info');
+
+    if (peer) { try { peer.destroy(); } catch (_) {} peer = null; }
+    if (typeof Peer === 'undefined') { toast('PeerJS library failed to load. Please refresh.', 'error'); return; }
+
+    try {
+      peer = new Peer(PEER_CONFIG);
+    } catch (e) {
+      toast('Failed to init WebRTC. Please refresh.', 'error');
+      return;
+    }
+
+    peer.on('open', id => {
+      myPeerId = id;
+      const hostPeerId = `chatling-${code}`;
+      hostConn = peer.connect(hostPeerId, { reliable: true });
+
+      hostConn.on('open', () => {
+        try {
+          hostConn.send({ type: 'join-request', senderId: myPeerId, nickname: myNickname });
+        } catch (_) {}
       });
-    } else if (hostConnection && hostConnection.open) {
-      try {
-        hostConnection.send({
-          type: 'leave',
-          senderId: myPeerId,
-          nickname: myNickname
-        });
-      } catch (e) {}
-    }
 
-    stopHeartbeat();
+      hostConn.on('data', data => {
+        if (!data || !data.type) return;
 
-    connectedPeers.forEach(p => {
-      try { p.conn.close(); } catch (e) {}
-    });
-    connectedPeers.clear();
-
-    if (hostConnection) {
-      try { hostConnection.close(); } catch (e) {}
-      hostConnection = null;
-    }
-
-    if (peer) {
-      try { peer.destroy(); } catch (e) {}
-      peer = null;
-    }
-
-    groupRoster = [];
-    activeTypers.clear();
-    seenMessageIds.clear();
-    currentRoomCode = null;
-    isHost = false;
-
-    if (chatView) chatView.classList.add('hidden');
-    if (homeView) homeView.classList.remove('hidden');
-    if (createActions) createActions.classList.add('hidden');
-    if (btnGenerateCode) btnGenerateCode.classList.remove('hidden');
-    if (createdCodeDisplay) createdCodeDisplay.textContent = '------';
-    if (joinCodeInput) joinCodeInput.value = '';
-
-    if (chatMessages) {
-      const messages = chatMessages.querySelectorAll('div[id^="msg-wrap-"]');
-      messages.forEach(m => m.remove());
-    }
-
-    if (window.history && window.history.replaceState) {
-      window.history.replaceState({}, '', window.location.pathname);
-    }
-
-    showToast('You left the group chat.', 'info');
-  }
-
-  if (btnLeaveChat) btnLeaveChat.addEventListener('click', () => leaveChatRoom(true));
-
-  // --- TYPING INDICATORS ---
-  if (messageInput) {
-    messageInput.addEventListener('input', () => {
-      if (!currentRoomCode) return;
-
-      if (!isTyping) {
-        isTyping = true;
-        const typingPayload = {
-          type: 'typing',
-          senderId: myPeerId,
-          nickname: myNickname
-        };
-        if (isHost) {
-          broadcastToAll(typingPayload);
-        } else if (hostConnection && hostConnection.open) {
-          try { hostConnection.send(typingPayload); } catch (e) {}
+        if (data.type === 'join-approved') {
+          roster = Array.isArray(data.members) ? data.members : [];
+          enterChat(code);
+          toast(`Joined Room #${code}!`, 'success');
+          renderSystem(`You joined Room #${code}`);
+          updateStatus();
+          return;
         }
+
+        if (data.type === 'member-joined') {
+          if (Array.isArray(data.members)) roster = data.members;
+          const n = data.member ? data.member.name : 'Someone';
+          toast(`${n} joined!`, 'success');
+          renderSystem(`${n} joined the group`);
+          updateStatus();
+          chime();
+          return;
+        }
+
+        if (data.type === 'chat') {
+          if (!seenMsgIds.has(data.id)) {
+            seenMsgIds.add(data.id);
+            renderMessage({ id: data.id, senderName: data.senderName, senderId: data.senderId, content: data.content, isOutgoing: false, timestamp: data.timestamp });
+            chime();
+          }
+          return;
+        }
+
+        if (data.type === 'ack') {
+          markDelivered(data.id);
+          return;
+        }
+
+        if (data.type === 'typing' || data.type === 'stop-typing') {
+          handleTyping(data);
+          return;
+        }
+
+        if (data.type === 'member-left') {
+          if (Array.isArray(data.members)) roster = data.members;
+          const n = data.nickname || 'A participant';
+          toast(`${n} left.`, 'info');
+          renderSystem(`${n} left the group`);
+          updateStatus();
+          return;
+        }
+
+        if (data.type === 'host-closed') {
+          toast('The room host ended the session.', 'info');
+          renderSystem('Host ended the room.');
+          setTimeout(() => leaveRoom(false), 1500);
+          return;
+        }
+      });
+
+      hostConn.on('close', () => {
+        toast('Connection to host lost.', 'info');
+        renderSystem('Connection to host was lost.');
+      });
+
+      hostConn.on('error', err => console.warn('[MEMBER] host conn err:', err));
+    });
+
+    peer.on('error', err => {
+      console.warn('[MEMBER] peer err:', err);
+      if (err.type === 'peer-unavailable') {
+        toast(`Room #${code} not found or host is offline.`, 'error');
+      } else {
+        toast(`Connection issue: ${err.type}`, 'info');
       }
+    });
 
-      clearTimeout(typingTimeout);
-      typingTimeout = setTimeout(() => {
-        isTyping = false;
-        const stopPayload = {
-          type: 'stop-typing',
-          senderId: myPeerId
-        };
-        if (isHost) {
-          broadcastToAll(stopPayload);
-        } else if (hostConnection && hostConnection.open) {
-          try { hostConnection.send(stopPayload); } catch (e) {}
-        }
-      }, 2500);
+    peer.on('disconnected', () => {
+      console.warn('[MEMBER] Disconnected from broker.');
+      try { peer.reconnect(); } catch (_) {}
     });
   }
 
-  // --- EMOJI PICKER ---
+  btnJoinRoom && btnJoinRoom.addEventListener('click', joinRoom);
+
+  joinCodeInput && joinCodeInput.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); joinRoom(); }
+  });
+
+  /* ─────────────────────────────────────────
+     AUTO-JOIN FROM URL (?room=XXXXXX)
+  ───────────────────────────────────────── */
+  (function autoJoin() {
+    const p = new URLSearchParams(window.location.search).get('room');
+    if (p && /^\d{6}$/.test(p)) {
+      switchTab('join');
+      if (joinCodeInput) joinCodeInput.value = p;
+      setTimeout(joinRoom, 600);
+    }
+  })();
+
+  /* ─────────────────────────────────────────
+     ENTER CHAT BUTTON (HOST)
+  ───────────────────────────────────────── */
+  btnEnterChat && btnEnterChat.addEventListener('click', () => {
+    if (currentRoomCode) enterChat(currentRoomCode);
+  });
+
+  /* ─────────────────────────────────────────
+     COPY / SHARE HELPERS
+  ───────────────────────────────────────── */
+  function copyText(text, label = 'Copied!') {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text).then(() => toast(label, 'info')).catch(() => toast(label, 'info'));
+    } else {
+      // Fallback for older iOS Safari
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity  = '0';
+      document.body.appendChild(ta);
+      ta.focus(); ta.select();
+      try { document.execCommand('copy'); toast(label, 'info'); } catch (_) {}
+      document.body.removeChild(ta);
+    }
+  }
+
+  async function shareInvite() {
+    if (!currentRoomCode) return;
+    const url = `${location.origin}${location.pathname}?room=${currentRoomCode}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: 'Join my Chatling room', text: `Room code: ${currentRoomCode}`, url });
+        return;
+      } catch (e) {
+        if (e.name === 'AbortError') return;
+      }
+    }
+    copyText(url, 'Invite link copied!');
+  }
+
+  btnCopyCode      && btnCopyCode.addEventListener('click',      () => currentRoomCode && copyText(currentRoomCode, 'Room code copied!'));
+  btnCopyLink      && btnCopyLink.addEventListener('click',      shareInvite);
+  headerInviteBtn  && headerInviteBtn.addEventListener('click',  shareInvite);
+  btnModalInvite   && btnModalInvite.addEventListener('click',   shareInvite);
+  btnModalCopyCode && btnModalCopyCode.addEventListener('click', () => currentRoomCode && copyText(currentRoomCode, `Code ${currentRoomCode} copied!`));
+  headerCodePill   && headerCodePill.addEventListener('click',   () => currentRoomCode && copyText(currentRoomCode, 'Room code copied!'));
+
+  /* ─────────────────────────────────────────
+     MEMBERS MODAL
+  ───────────────────────────────────────── */
+  btnGroupInfo && btnGroupInfo.addEventListener('click', () => {
+    renderMembers();
+    membersModal && membersModal.classList.remove('hidden');
+  });
+
+  btnGroupInfo && btnGroupInfo.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); btnGroupInfo.click(); }
+  });
+
+  btnCloseMembers && btnCloseMembers.addEventListener('click', () => {
+    membersModal && membersModal.classList.add('hidden');
+  });
+
+  membersModal && membersModal.addEventListener('click', e => {
+    if (e.target === membersModal) membersModal.classList.add('hidden');
+  });
+
+  /* ─────────────────────────────────────────
+     CLEAR CHAT
+  ───────────────────────────────────────── */
+  btnClearChat && btnClearChat.addEventListener('click', () => {
+    if (!window.confirm('Clear all messages from this device?')) return;
+    chatMessages && chatMessages.querySelectorAll('.msg-row-out,.msg-row-in,.sys-banner').forEach(el => el.remove());
+    toast('Chat cleared locally.', 'info');
+  });
+
+  /* ─────────────────────────────────────────
+     LEAVE CHAT
+  ───────────────────────────────────────── */
+  btnLeaveChat && btnLeaveChat.addEventListener('click', () => leaveRoom(true));
+
+  /* ─────────────────────────────────────────
+     TYPING INDICATORS (SEND)
+  ───────────────────────────────────────── */
+  function sendTypingPayload(type) {
+    const payload = { type, senderId: myPeerId, nickname: myNickname };
+    if (isHost) broadcast(payload);
+    else if (hostConn && hostConn.open) try { hostConn.send(payload); } catch (_) {}
+  }
+
+  messageInput && messageInput.addEventListener('input', () => {
+    if (!currentRoomCode) return;
+    if (!isTyping) { isTyping = true; sendTypingPayload('typing'); }
+    clearTimeout(typingTimeout);
+    typingTimeout = setTimeout(() => { isTyping = false; sendTypingPayload('stop-typing'); }, 2500);
+  });
+
+  /* ─────────────────────────────────────────
+     EMOJI PICKER
+  ───────────────────────────────────────── */
   if (btnEmojiToggle && emojiPicker) {
-    btnEmojiToggle.addEventListener('click', (e) => {
+    btnEmojiToggle.addEventListener('click', e => {
       e.stopPropagation();
       emojiPicker.classList.toggle('hidden');
     });
 
-    document.addEventListener('click', (e) => {
-      if (!emojiPicker.contains(e.target) && e.target !== btnEmojiToggle) {
+    document.addEventListener('click', e => {
+      if (!emojiPicker.contains(e.target) && e.target !== btnEmojiToggle)
         emojiPicker.classList.add('hidden');
-      }
     });
 
-    const emojiButtons = emojiPicker.querySelectorAll('.emoji-btn');
-    emojiButtons.forEach(btn => {
+    emojiPicker.querySelectorAll('.emoji-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         if (messageInput) {
-          messageInput.value += btn.textContent;
+          const s = messageInput.selectionStart;
+          const e_ = messageInput.selectionEnd;
+          const v = messageInput.value;
+          messageInput.value = v.slice(0, s) + btn.textContent + v.slice(e_);
+          messageInput.selectionStart = messageInput.selectionEnd = s + btn.textContent.length;
           messageInput.focus();
+          emojiPicker.classList.add('hidden');
         }
       });
     });
   }
 
-  // --- SEND MESSAGE ---
-  function handleSendMessage() {
+  /* ─────────────────────────────────────────
+     SEND MESSAGE
+  ───────────────────────────────────────── */
+  function sendMessage() {
     if (!messageInput) return;
     const content = messageInput.value.trim();
     if (!content || !currentRoomCode) return;
 
-    const trimmedContent = content.slice(0, 2000);
-    const tempId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const trimmed   = content.slice(0, 2000);
+    const msgId     = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
     const timestamp = new Date().toISOString();
 
     messageInput.value = '';
-    seenMessageIds.add(tempId);
+    seenMsgIds.add(msgId);
 
-    const hasPeers = isHost ? connectedPeers.size > 0 : (hostConnection && hostConnection.open);
+    const hasPeers = isHost ? peers.size > 0 : (hostConn && hostConn.open);
 
-    // Append outgoing bubble locally (WhatsApp soft green bubble)
-    appendMessage({
-      id: tempId,
-      senderName: myNickname,
-      senderId: myPeerId,
-      content: trimmedContent,
-      isOutgoing: true,
-      timestamp,
-      status: hasPeers ? 'delivered' : 'sent'
-    });
+    renderMessage({ id: msgId, senderName: myNickname, senderId: myPeerId, content: trimmed, isOutgoing: true, timestamp, status: hasPeers ? 'delivered' : 'sent' });
 
-    const msgPayload = {
-      type: 'chat',
-      id: tempId,
-      senderName: myNickname,
-      senderId: myPeerId,
-      content: trimmedContent,
-      timestamp
-    };
+    const payload = { type: 'chat', id: msgId, senderName: myNickname, senderId: myPeerId, content: trimmed, timestamp };
 
     if (isHost) {
-      broadcastToAll(msgPayload);
-    } else if (hostConnection && hostConnection.open) {
-      try { hostConnection.send(msgPayload); } catch (e) {}
+      broadcast(payload);
+    } else if (hostConn && hostConn.open) {
+      try { hostConn.send(payload); } catch (_) {}
     }
 
     // Stop typing
-    const stopPayload = {
-      type: 'stop-typing',
-      senderId: myPeerId
-    };
-    if (isHost) {
-      broadcastToAll(stopPayload);
-    } else if (hostConnection && hostConnection.open) {
-      try { hostConnection.send(stopPayload); } catch (e) {}
+    if (isTyping) {
+      isTyping = false;
+      clearTimeout(typingTimeout);
+      sendTypingPayload('stop-typing');
     }
-    isTyping = false;
-    clearTimeout(typingTimeout);
 
     messageInput.focus();
-    scrollToBottom();
+    scrollBottom();
   }
 
-  if (messageForm) {
-    messageForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      handleSendMessage();
-    });
-  }
+  messageForm && messageForm.addEventListener('submit', e => { e.preventDefault(); sendMessage(); });
 
-  // Dismiss keyboard when scrolling or tapping chat background (WhatsApp Mobile feature)
+  /* ─────────────────────────────────────────
+     KEYBOARD DISMISS ON MOBILE
+  ───────────────────────────────────────── */
   if (chatMessages) {
-    const dismissKeyboard = (e) => {
-      if (e.target && e.target.closest && e.target.closest('button, a, input, textarea')) return;
-      if (document.activeElement === messageInput) {
-        messageInput.blur();
-      }
-    };
-
-    chatMessages.addEventListener('touchstart', dismissKeyboard, { passive: true });
-    chatMessages.addEventListener('mousedown', dismissKeyboard);
-
-    let isUserScrolling = false;
-    chatMessages.addEventListener('scroll', () => {
-      if (document.activeElement === messageInput && isUserScrolling) {
-        messageInput.blur();
-      }
-    }, { passive: true });
-
-    chatMessages.addEventListener('touchmove', () => {
-      isUserScrolling = true;
-    }, { passive: true });
-
-    chatMessages.addEventListener('touchend', () => {
-      isUserScrolling = false;
+    chatMessages.addEventListener('touchstart', e => {
+      if (e.target && e.target.closest && e.target.closest('button,a,input,textarea')) return;
+      if (document.activeElement === messageInput) messageInput.blur();
     }, { passive: true });
   }
 
-  // Global offline / online indicator
+  /* ─────────────────────────────────────────
+     HEARTBEAT (KEEP CONNECTIONS ALIVE)
+  ───────────────────────────────────────── */
+  function startHeartbeat() {
+    stopHeartbeat();
+    heartbeatTimer = setInterval(() => {
+      if (isHost) broadcast({ type: 'ping' });
+      else if (hostConn && hostConn.open) try { hostConn.send({ type: 'ping' }); } catch (_) {}
+    }, 20000);
+  }
+
+  function stopHeartbeat() {
+    if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+  }
+
+  /* ─────────────────────────────────────────
+     ONLINE / OFFLINE BANNER
+  ───────────────────────────────────────── */
   window.addEventListener('offline', () => {
-    if (connectionBanner) connectionBanner.classList.remove('hidden');
+    connectionBanner && connectionBanner.classList.remove('hidden');
   });
 
   window.addEventListener('online', () => {
-    if (connectionBanner) connectionBanner.classList.add('hidden');
-    showToast('Network online.', 'success');
+    connectionBanner && connectionBanner.classList.add('hidden');
+    toast('Back online!', 'success');
   });
+
 });
