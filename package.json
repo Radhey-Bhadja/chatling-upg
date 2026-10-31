@@ -1,7 +1,7 @@
 {
   "name": "chatling-app",
   "version": "1.0.0",
-  "description": "Private Ephemeral Group & 1-to-1 Web Chat",
+  "description": "Private Ephemeral Group Web Chat",
   "scripts": {
     "build": "node build.js"
   },

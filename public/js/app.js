@@ -1,5 +1,8 @@
+// Chatling - Private Ephemeral Group Web Chat Engine
+// Full Multi-User Group Architecture with Hub-and-Spoke Relay Coordination
+
 document.addEventListener('DOMContentLoaded', () => {
-  // WebRTC ICE Server Configuration for Live HTTPS / Mobile Network Traversal (STUN + TURN Fallback)
+  // WebRTC ICE Server Configuration for Live HTTPS / Mobile Carrier Traversal (STUN + TURN Fallback)
   const PEER_CONFIG = {
     config: {
       iceServers: [
@@ -9,7 +12,7 @@ document.addEventListener('DOMContentLoaded', () => {
         { urls: 'stun:stun3.l.google.com:19302' },
         { urls: 'stun:stun4.l.google.com:19302' },
         { urls: 'stun:global.stun.twilio.com:3478' },
-        // OpenRelay Public TURN Server fallback for symmetric NAT / strict mobile firewalls
+        // OpenRelay Public TURN Server fallback for symmetric NAT / strict mobile cellular firewalls
         {
           urls: 'turn:openrelay.metered.ca:80',
           username: 'openrelay',
@@ -30,18 +33,24 @@ document.addEventListener('DOMContentLoaded', () => {
     debug: 0
   };
 
-  // State Management for Multi-User Mesh Group Chat
+  // State Management for Multi-User Group Chat
   let peer = null;
   let myPeerId = null;
   let myNickname = '';
   let isHost = false;
   let currentRoomCode = null;
+  let hostConn = null; // Used by members to communicate with the host
 
-  // Active Peer connections map: peerId -> DataConnection
-  const connections = new Map();
-  // Nicknames map: peerId -> nickname string
-  const peerNicknames = new Map();
-  // Typing state map: peerId -> { nickname: string, timer: number }
+  // Host tracks connected members: Map<peerId, { conn, nickname, isHost }>
+  const connectedPeers = new Map();
+
+  // Canonical group roster: Array<{ id: string, name: string, isHost: boolean }>
+  let groupRoster = [];
+
+  // Deduplication set for message IDs
+  const seenMessageIds = new Set();
+
+  // Typing indicators: Map<senderId, { nickname: string, timer: any }>
   const activeTypers = new Map();
 
   let typingTimeout = null;
@@ -50,7 +59,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Color palette for group participant names (WhatsApp style)
   const NAME_COLORS = [
-    '#25D366', // Emerald / WA Green
+    '#25D366', // WA Emerald
     '#0284c7', // Sky Blue
     '#8b5cf6', // Purple
     '#f59e0b', // Amber
@@ -58,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
     '#14b8a6', // Teal
     '#f97316', // Orange
     '#6366f1', // Indigo
-    '#ef4444'  // Red
+    '#ef4444'  // Coral Red
   ];
 
   function getSenderColor(nameOrId) {
@@ -92,6 +101,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const statusIndicator = document.getElementById('status-indicator');
   const statusText = document.getElementById('status-text');
   const badgeMemberCount = document.getElementById('badge-member-count');
+  const headerGroupTitle = document.getElementById('header-group-title');
   const btnGroupInfo = document.getElementById('btn-group-info');
   const headerInviteBtn = document.getElementById('header-invite-btn');
   const headerCodePill = document.getElementById('header-code-pill');
@@ -113,13 +123,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCloseMembers = document.getElementById('btn-close-members');
   const membersList = document.getElementById('members-list');
   const modalMemberCount = document.getElementById('modal-member-count');
+  const modalRoomCodeVal = document.getElementById('modal-room-code-val');
+  const btnModalCopyCode = document.getElementById('btn-modal-copy-code');
   const btnModalInvite = document.getElementById('btn-modal-invite');
 
-  // Toast Container & Connection Banner
+  // Notification Elements
   const toastContainer = document.getElementById('toast-container');
   const connectionBanner = document.getElementById('connection-banner');
-
-  // Theme Icons
   const iconSun = document.getElementById('icon-sun');
   const iconMoon = document.getElementById('icon-moon');
 
@@ -138,69 +148,64 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function initTheme() {
-    let savedTheme = null;
-    try {
-      savedTheme = localStorage.getItem('chatling_theme');
-    } catch (e) {}
-
-    const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
-    const isDark = savedTheme ? (savedTheme === 'dark') : prefersDark;
-    updateThemeUI(isDark);
-  }
-
-  initTheme();
+  const savedTheme = localStorage.getItem('chatling_theme');
+  const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+  const isDarkMode = savedTheme ? savedTheme === 'dark' : prefersDark;
+  updateThemeUI(isDarkMode);
 
   if (btnThemeToggle) {
     btnThemeToggle.addEventListener('click', () => {
-      const isDarkNow = document.documentElement.classList.contains('dark');
-      const newDark = !isDarkNow;
-      updateThemeUI(newDark);
-      try {
-        localStorage.setItem('chatling_theme', newDark ? 'dark' : 'light');
-      } catch (e) {}
+      const isCurrentlyDark = document.documentElement.classList.contains('dark');
+      const nextMode = !isCurrentlyDark;
+      updateThemeUI(nextMode);
+      localStorage.setItem('chatling_theme', nextMode ? 'dark' : 'light');
     });
   }
 
-  // Load saved nickname if available
-  try {
-    const savedName = localStorage.getItem('chatling_nickname');
-    if (savedName && userNicknameInput) {
-      userNicknameInput.value = savedName;
-    }
-  } catch (e) {}
-
-  function getEffectiveNickname() {
-    let name = userNicknameInput ? userNicknameInput.value.trim() : '';
-    if (!name) {
-      name = 'User_' + Math.floor(1000 + Math.random() * 9000);
-      if (userNicknameInput) userNicknameInput.value = name;
-    }
-    // Limit nickname length to 20 chars
-    name = name.slice(0, 20);
+  // --- AUDIO FEEDBACK (Synthesized Chime) ---
+  function playNotificationSound() {
     try {
-      localStorage.setItem('chatling_nickname', name);
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
+      osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1); // A5
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start();
+      osc.stop(ctx.currentTime + 0.25);
     } catch (e) {}
-    return name;
   }
 
-  // --- SAFE NOTIFICATIONS (XSS Protected) ---
+  // --- HELPERS ---
+  function getEffectiveNickname() {
+    const inputVal = userNicknameInput ? userNicknameInput.value.trim() : '';
+    if (inputVal) return inputVal.slice(0, 20);
+    return `User ${Math.floor(1000 + Math.random() * 9000)}`;
+  }
+
   function showToast(message, type = 'info') {
     if (!toastContainer) return;
     const toast = document.createElement('div');
     const bgColors = {
-      info: 'bg-gray-800 text-white dark:bg-white dark:text-gray-900',
-      success: 'bg-wa-green text-white',
+      info: 'bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900',
+      success: 'bg-emerald-600 text-white',
       error: 'bg-red-600 text-white'
     };
 
-    toast.className = `${bgColors[type] || bgColors.info} px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-xl shadow-lg text-xs sm:text-sm font-medium transition-all transform duration-300 translate-y-2 opacity-0 flex items-center gap-2 pointer-events-auto z-50`;
-    
-    // Safely assign text via textContent to completely prevent XSS
-    const textSpan = document.createElement('span');
-    textSpan.textContent = message;
-    toast.appendChild(textSpan);
-    
+    toast.className = `${bgColors[type] || bgColors.info} px-4 py-2.5 rounded-2xl shadow-xl text-xs sm:text-sm font-semibold transition-all transform duration-300 translate-y-2 opacity-0 flex items-center gap-2 pointer-events-auto z-50 border border-white/10`;
+    const span = document.createElement('span');
+    span.textContent = message;
+    toast.appendChild(span);
+
     toastContainer.appendChild(toast);
 
     setTimeout(() => {
@@ -208,119 +213,118 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 10);
 
     setTimeout(() => {
-      toast.classList.add('opacity-0', 'translate-y-2');
+      toast.classList.add('opacity-0', '-translate-y-2');
       setTimeout(() => toast.remove(), 300);
-    }, 3500);
+    }, 3200);
   }
 
-  /**
-   * Switch between Home Tabs
-   */
   function switchHomeTab(tab) {
-    if (!tabCreate || !tabJoin || !sectionCreate || !sectionJoin) return;
-    const activeClass = 'flex-1 py-2.5 text-xs sm:text-sm font-bold rounded-xl bg-emerald-500 text-white shadow-sm transition-all cursor-pointer';
-    const inactiveClass = 'flex-1 py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer text-slate-600 dark:text-slate-300 hover:text-slate-900';
-
     if (tab === 'create') {
-      tabCreate.className = activeClass;
-      tabJoin.className = inactiveClass;
-      sectionCreate.classList.remove('hidden');
-      sectionJoin.classList.add('hidden');
+      if (tabCreate) {
+        tabCreate.className = 'flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl bg-emerald-500 text-white shadow-sm transition-all cursor-pointer';
+      }
+      if (tabJoin) {
+        tabJoin.className = 'flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer text-slate-600 dark:text-slate-300 hover:text-slate-900';
+      }
+      if (sectionCreate) sectionCreate.classList.remove('hidden');
+      if (sectionJoin) sectionJoin.classList.add('hidden');
     } else {
-      tabJoin.className = activeClass;
-      tabCreate.className = inactiveClass;
-      sectionJoin.classList.remove('hidden');
-      sectionCreate.classList.add('hidden');
+      if (tabJoin) {
+        tabJoin.className = 'flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl bg-emerald-500 text-white shadow-sm transition-all cursor-pointer';
+      }
+      if (tabCreate) {
+        tabCreate.className = 'flex-1 py-2 sm:py-2.5 text-xs sm:text-sm font-bold rounded-xl transition-all cursor-pointer text-slate-600 dark:text-slate-300 hover:text-slate-900';
+      }
+      if (sectionJoin) sectionJoin.classList.remove('hidden');
+      if (sectionCreate) sectionCreate.classList.add('hidden');
       if (joinCodeInput) joinCodeInput.focus();
     }
   }
 
-  /**
-   * Update Group Status & Member Count
-   */
   function updateGroupStatus() {
-    const totalCount = connections.size + 1; // self + connected peers
+    const totalCount = groupRoster.length > 0 ? groupRoster.length : 1;
     if (badgeMemberCount) badgeMemberCount.textContent = totalCount;
     if (modalMemberCount) modalMemberCount.textContent = `${totalCount} online`;
 
     if (!statusIndicator || !statusText) return;
 
-    if (connections.size > 0) {
+    if (totalCount > 1) {
       statusIndicator.className = 'absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-wa-green border-2 border-white dark:border-slate-900 status-pulse';
-      const names = Array.from(peerNicknames.values());
-      if (names.length === 0) {
-        statusText.textContent = `${connections.size} participant${connections.size > 1 ? 's' : ''} connected`;
-      } else if (names.length === 1) {
-        statusText.textContent = `${names[0]} is online`;
-      } else if (names.length === 2) {
-        statusText.textContent = `${names[0]}, ${names[1]} online`;
+      const otherNames = groupRoster.filter(m => m.id !== myPeerId).map(m => m.name);
+      if (otherNames.length === 1) {
+        statusText.textContent = `${otherNames[0]} is online`;
+      } else if (otherNames.length === 2) {
+        statusText.textContent = `${otherNames[0]}, ${otherNames[1]} online`;
       } else {
-        statusText.textContent = `${names[0]} & ${names.length - 1} others online`;
+        statusText.textContent = `${otherNames[0]} & ${otherNames.length - 1} others online`;
       }
       statusText.className = 'text-[10px] sm:text-xs text-wa-green font-medium truncate';
-      startHeartbeat();
     } else {
       statusIndicator.className = 'absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-amber-500 border-2 border-white dark:border-slate-900';
       statusText.textContent = 'Waiting for friends to join...';
       statusText.className = 'text-[10px] sm:text-xs text-slate-500 dark:text-slate-400 font-medium truncate';
-      stopHeartbeat();
     }
 
     renderMembersList();
   }
 
-  /**
-   * Render Members in Flyout Modal
-   */
   function renderMembersList() {
     if (!membersList) return;
     membersList.innerHTML = '';
 
-    // Self
-    const selfItem = document.createElement('li');
-    selfItem.className = 'flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800';
-    selfItem.innerHTML = `
-      <div class="flex items-center gap-2.5 min-w-0">
-        <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-bold text-white text-xs shrink-0 select-none shadow-sm" style="background-color: ${getSenderColor(myNickname)}">
-          ${escapeHTML(myNickname.charAt(0).toUpperCase())}
-        </div>
-        <div class="text-xs sm:text-sm font-bold text-slate-800 dark:text-slate-100 truncate">
-          ${escapeHTML(myNickname)} <span class="text-emerald-500 font-normal text-xs">(You${isHost ? ' • Creator' : ''})</span>
-        </div>
-      </div>
-      <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
-    `;
-    membersList.appendChild(selfItem);
-
-    // Other peers
-    connections.forEach((conn, peerId) => {
-      const name = peerNicknames.get(peerId) || 'Participant';
-      const item = document.createElement('li');
-      item.className = 'flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800';
-      item.innerHTML = `
+    if (groupRoster.length === 0) {
+      // Fallback single member
+      const li = document.createElement('li');
+      li.className = 'flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800';
+      li.innerHTML = `
         <div class="flex items-center gap-2.5 min-w-0">
-          <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-full flex items-center justify-center font-bold text-white text-xs shrink-0 select-none shadow-sm" style="background-color: ${getSenderColor(name)}">
-            ${escapeHTML(name.charAt(0).toUpperCase())}
+          <div class="w-8 h-8 rounded-full bg-emerald-500 text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs">
+            ${escapeHTML(myNickname.charAt(0).toUpperCase())}
           </div>
-          <div class="text-xs sm:text-sm font-semibold text-slate-800 dark:text-slate-200 truncate">
-            ${escapeHTML(name)}
+          <div class="min-w-0">
+            <p class="text-xs font-bold text-slate-900 dark:text-white truncate">${escapeHTML(myNickname)} (You)</p>
+            <p class="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold">${isHost ? 'Group Host' : 'Member'}</p>
           </div>
         </div>
-        <span class="w-2 h-2 rounded-full bg-emerald-500 shrink-0"></span>
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
       `;
-      membersList.appendChild(item);
+      membersList.appendChild(li);
+      return;
+    }
+
+    groupRoster.forEach(member => {
+      const isSelf = member.id === myPeerId;
+      const color = isSelf ? '#10b981' : getSenderColor(member.name);
+      const initial = escapeHTML((member.name || 'M').charAt(0).toUpperCase());
+      const roleLabel = member.isHost ? 'Group Host' : (isSelf ? 'You' : 'Member');
+
+      const li = document.createElement('li');
+      li.className = 'flex items-center justify-between p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-800';
+      li.innerHTML = `
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="w-8 h-8 rounded-full text-white font-bold text-xs flex items-center justify-center shrink-0 shadow-xs" style="background-color: ${color}">
+            ${initial}
+          </div>
+          <div class="min-w-0">
+            <p class="text-xs font-bold text-slate-900 dark:text-white truncate">
+              ${escapeHTML(member.name)} ${isSelf ? '<span class="text-slate-400 font-normal">(You)</span>' : ''}
+            </p>
+            <p class="text-[10px] ${member.isHost ? 'text-amber-500 font-bold' : 'text-slate-400 dark:text-slate-500'}">${roleLabel}</p>
+          </div>
+        </div>
+        <span class="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0"></span>
+      `;
+      membersList.appendChild(li);
     });
   }
 
-  /**
-   * Transition to Chat Interface
-   */
   function enterChatView(code) {
     currentRoomCode = code;
     if (homeView) homeView.classList.add('hidden');
     if (chatView) chatView.classList.remove('hidden');
     if (headerGroupTitle) headerGroupTitle.textContent = `Group #${code}`;
     if (headerRoomCode) headerRoomCode.textContent = code;
+    if (modalRoomCodeVal) modalRoomCodeVal.textContent = code;
     if (headerCodePill) headerCodePill.classList.remove('hidden');
     if (messageInput) messageInput.focus();
     updateGroupStatus();
@@ -329,22 +333,24 @@ document.addEventListener('DOMContentLoaded', () => {
     if (window.history && window.history.pushState) {
       window.history.pushState({ inChat: true, room: code }, '', `?room=${code}`);
     }
+
+    startHeartbeat();
   }
 
-  // Handle hardware / browser back button navigation
   window.addEventListener('popstate', () => {
     if (chatView && !chatView.classList.contains('hidden')) {
       leaveChatRoom(false);
     }
   });
 
-  /**
-   * WebRTC DataChannel Keep-Alive Heartbeat
-   */
   function startHeartbeat() {
     stopHeartbeat();
     heartbeatInterval = setInterval(() => {
-      broadcastData({ type: 'ping' });
+      if (isHost) {
+        broadcastToGroup({ type: 'ping' });
+      } else if (hostConn && hostConn.open) {
+        try { hostConn.send({ type: 'ping' }); } catch (e) {}
+      }
     }, 15000);
   }
 
@@ -355,35 +361,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  /**
-   * Scroll Chat Window to Bottom (Always dynamically looks up live DOM element)
-   */
   function scrollToBottom(behavior = 'smooth') {
     if (!chatMessages) return;
-    const liveAnchor = document.getElementById('messages-bottom-anchor');
-    if (liveAnchor && liveAnchor.parentNode === chatMessages) {
-      liveAnchor.scrollIntoView({ behavior, block: 'end' });
-    } else {
+    requestAnimationFrame(() => {
       chatMessages.scrollTo({
         top: chatMessages.scrollHeight,
-        behavior
+        behavior: behavior
       });
-    }
-
-    // Safety fallback for mobile soft-keyboard animation delays
-    setTimeout(() => {
-      const anchor = document.getElementById('messages-bottom-anchor');
-      if (anchor && anchor.parentNode === chatMessages) {
-        anchor.scrollIntoView({ behavior: 'auto', block: 'end' });
-      } else if (chatMessages) {
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-      }
-    }, 100);
+    });
   }
 
-  /**
-   * Escape HTML to prevent XSS
-   */
   function escapeHTML(str) {
     if (!str) return '';
     return String(str)
@@ -394,34 +381,31 @@ document.addEventListener('DOMContentLoaded', () => {
       .replace(/'/g, '&#039;');
   }
 
-  /**
-   * Format ISO Timestamp to 12h Time string
-   */
   function formatTime(isoString) {
     const date = isoString ? new Date(isoString) : new Date();
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   }
 
-  /**
-   * Broadcast payload to all open peer data connections
-   */
-  function broadcastData(payload, excludePeerId = null) {
-    connections.forEach((conn, peerId) => {
-      if (peerId !== excludePeerId && conn.open) {
+  // Broadcast a message to all connected members (Host Role)
+  function broadcastToGroup(payload, excludePeerId = null) {
+    connectedPeers.forEach((peerData, peerId) => {
+      if (peerId !== excludePeerId && peerData.conn && peerData.conn.open) {
         try {
-          conn.send(payload);
+          peerData.conn.send(payload);
         } catch (e) {
-          console.error(`Failed sending data to ${peerId}`, e);
+          console.warn(`[BROADCAST] Failed to send to ${peerId}:`, e);
         }
       }
     });
   }
 
-  /**
-   * Append Message Bubble to Chat (WhatsApp Group Style with Avatar & Dynamic Sender Tags)
-   */
+  // Append a chat bubble
   function appendMessage({ id, senderName, senderId, content, isOutgoing, timestamp, status = 'sent' }) {
     if (!chatMessages) return;
+    
+    // Check if message is already rendered
+    if (document.getElementById(`msg-wrap-${id}`)) return;
+
     const wrapper = document.createElement('div');
     wrapper.id = `msg-wrap-${id}`;
     
@@ -431,17 +415,17 @@ document.addEventListener('DOMContentLoaded', () => {
     let statusTicks = '';
     if (isOutgoing) {
       if (status === 'delivered') {
-        statusTicks = `<svg class="w-3.5 h-3.5 text-sky-500 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7M5 7l4 4L19 1"/></svg>`;
+        statusTicks = `<svg class="w-3.5 h-3.5 text-sky-300 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7M5 7l4 4L19 1"/></svg>`;
       } else {
-        statusTicks = `<svg class="w-3.5 h-3.5 text-gray-400 dark:text-gray-500 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>`;
+        statusTicks = `<svg class="w-3.5 h-3.5 text-emerald-200 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>`;
       }
     }
 
     if (isOutgoing) {
-      // Outgoing Message (Right Aligned)
-      wrapper.className = 'flex items-end justify-end my-1 w-full';
+      // Outgoing Message (Right Aligned, Green Gradient)
+      wrapper.className = 'flex items-end justify-end my-1.5 w-full';
       wrapper.innerHTML = `
-        <div class="bubble bubble-out py-2 px-3 sm:px-3.5 rounded-2xl rounded-br-xs text-xs sm:text-sm max-w-[85%] sm:max-w-[70%]">
+        <div class="bubble bubble-out py-2 px-3 sm:px-3.5 rounded-2xl rounded-br-xs text-xs sm:text-sm max-w-[85%] sm:max-w-[70%] shadow-xs">
           <div class="leading-relaxed break-words overflow-wrap-anywhere">${contentHtml}</div>
           <div class="flex items-center justify-end gap-1 text-[10px] text-emerald-100 mt-1 select-none">
             <span>${timeStr}</span>
@@ -450,21 +434,21 @@ document.addEventListener('DOMContentLoaded', () => {
         </div>
       `;
     } else {
-      // Incoming Message from another participant (Left Aligned with Sender Avatar & Color Tag)
+      // Incoming Group Message (Left Aligned with Sender Avatar & WhatsApp Color Tag)
       const name = senderName || 'Member';
       const nameColor = getSenderColor(name);
       const initial = escapeHTML(name.charAt(0).toUpperCase());
 
-      wrapper.className = 'flex items-end justify-start gap-1.5 sm:gap-2 my-1 w-full';
+      wrapper.className = 'flex items-end justify-start gap-1.5 sm:gap-2 my-1.5 w-full';
       wrapper.innerHTML = `
-        <div class="w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center font-bold text-white text-[10px] sm:text-xs shrink-0 select-none shadow-sm" style="background-color: ${nameColor}">
+        <div class="w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center font-bold text-white text-[10px] sm:text-xs shrink-0 select-none shadow-xs" style="background-color: ${nameColor}">
           ${initial}
         </div>
-        <div class="bubble bubble-in py-2 px-3 sm:px-3.5 rounded-2xl rounded-bl-xs text-xs sm:text-sm max-w-[80%] sm:max-w-[68%]">
-          <div class="font-bold text-[11px] sm:text-xs mb-0.5 select-none flex items-center gap-1.5 truncate max-w-full" style="color: ${nameColor}">
-            <span class="truncate">${escapeHTML(name)}</span>
+        <div class="bubble bubble-in py-2 px-3 sm:px-3.5 rounded-2xl rounded-bl-xs text-xs sm:text-sm max-w-[85%] sm:max-w-[70%]">
+          <div class="text-[11px] font-bold mb-0.5 select-none" style="color: ${nameColor}">
+            ${escapeHTML(name)}
           </div>
-          <div class="leading-relaxed text-slate-900 dark:text-slate-100 break-words overflow-wrap-anywhere">${contentHtml}</div>
+          <div class="leading-relaxed break-words overflow-wrap-anywhere text-slate-800 dark:text-slate-100">${contentHtml}</div>
           <div class="flex items-center justify-end gap-1 text-[10px] text-slate-400 dark:text-slate-500 mt-1 select-none">
             <span>${timeStr}</span>
           </div>
@@ -472,57 +456,33 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
     }
 
-    const anchor = document.getElementById('messages-bottom-anchor');
-    if (anchor && anchor.parentNode === chatMessages) {
-      chatMessages.insertBefore(wrapper, anchor);
-    } else {
-      chatMessages.appendChild(wrapper);
-    }
+    chatMessages.appendChild(wrapper);
     scrollToBottom();
-
-    // Optional haptic vibration feedback on supported devices
-    if (navigator.vibrate) {
-      navigator.vibrate(isOutgoing ? 15 : [25, 40, 25]);
-    }
   }
 
-  /**
-   * System Info Banner in chat
-   */
-  function appendSystemBanner(text) {
+  function appendSystemBanner(message) {
     if (!chatMessages) return;
     const banner = document.createElement('div');
-    banner.className = 'flex justify-center my-1.5 select-none';
+    banner.className = 'flex justify-center my-2 select-none';
     banner.innerHTML = `
-      <div class="bg-slate-200/70 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 text-[10px] sm:text-[11px] font-medium px-3 py-0.5 rounded-full shadow-xs text-center max-w-xs sm:max-w-md">
-        ${escapeHTML(text)}
+      <div class="bg-slate-200/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 text-[10px] sm:text-xs px-3 py-1 rounded-full shadow-2xs backdrop-blur-sm max-w-[90%] text-center truncate">
+        ${escapeHTML(message)}
       </div>
     `;
-    const anchor = document.getElementById('messages-bottom-anchor');
-    if (anchor && anchor.parentNode === chatMessages) {
-      chatMessages.insertBefore(banner, anchor);
-    } else {
-      chatMessages.appendChild(banner);
-    }
+    chatMessages.appendChild(banner);
     scrollToBottom();
   }
 
-  /**
-   * Update message delivery status to double tick
-   */
   function markMessageDelivered(msgId) {
-    const msgWrap = document.getElementById(`msg-wrap-${msgId}`);
-    if (msgWrap) {
-      const tickSpan = msgWrap.querySelector('.tick-icon');
+    const wrap = document.getElementById(`msg-wrap-${msgId}`);
+    if (wrap) {
+      const tickSpan = wrap.querySelector('.tick-icon');
       if (tickSpan) {
-        tickSpan.innerHTML = `<svg class="w-3.5 h-3.5 text-sky-500 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7M5 7l4 4L19 1"/></svg>`;
+        tickSpan.innerHTML = `<svg class="w-3.5 h-3.5 text-sky-300 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7M5 7l4 4L19 1"/></svg>`;
       }
     }
   }
 
-  /**
-   * Refresh typing indicator text for groups
-   */
   function updateTypingDisplay() {
     if (!typingIndicator || !typingText) return;
     const typers = Array.from(activeTypers.values()).map(t => t.nickname);
@@ -543,207 +503,27 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // --- WEBRTC CONNECTION HANDLING (MESH WITH COLLISION AVOIDANCE) ---
-
-  function connectToPeer(targetPeerId) {
-    if (!peer || targetPeerId === myPeerId) return;
-
-    // Avoid duplicate connection if already open or connecting
-    if (connections.has(targetPeerId) && connections.get(targetPeerId).open) {
-      return;
-    }
-
-    try {
-      const conn = peer.connect(targetPeerId, { reliable: true });
-      setupConnectionListeners(conn);
-    } catch (e) {
-      console.warn(`Could not connect to peer ${targetPeerId}`, e);
-    }
-  }
-
-  function setupConnectionListeners(conn) {
-    const peerId = conn.peer;
-
-    conn.on('open', () => {
-      // Deduplicate: If an existing open connection exists with this peer, close the redundant one
-      if (connections.has(peerId) && connections.get(peerId).open && connections.get(peerId) !== conn) {
-        try { conn.close(); } catch (e) {}
-        return;
-      }
-
-      connections.set(peerId, conn);
-
-      // Send introduction with my nickname and senderId
-      conn.send({
-        type: 'intro',
-        senderId: myPeerId,
-        nickname: myNickname
-      });
-
-      // If Host: coordinate the mesh without collision.
-      // Instruct existing peers to initiate connection to this new peer.
-      if (isHost) {
-        connections.forEach((c, id) => {
-          if (id !== peerId && c.open) {
-            c.send({
-              type: 'peer-joined',
-              peerId: peerId
-            });
-          }
-        });
-
-        // Send room info to newcomer (without telling them to dual-dial)
-        const peerList = Array.from(connections.keys()).filter(id => id !== peerId);
-        conn.send({
-          type: 'peer-list',
-          peers: peerList
-        });
-      }
-
-      updateGroupStatus();
-    });
-
-    conn.on('data', (data) => {
-      if (!data) return;
-
-      if (data.type === 'ping') {
-        return;
-      }
-
-      if (data.type === 'intro') {
-        const name = (data.nickname || 'Member').slice(0, 20);
-        const isNew = !peerNicknames.has(peerId);
-        peerNicknames.set(peerId, name);
-        if (isNew) {
-          showToast(`${name} joined the group!`, 'success');
-          appendSystemBanner(`${name} joined the group`);
-        }
-        updateGroupStatus();
-        return;
-      }
-
-      // Received by existing peers from the host: connect outwards to the new joiner
-      if (data.type === 'peer-joined') {
-        if (data.peerId && data.peerId !== myPeerId && !connections.has(data.peerId)) {
-          connectToPeer(data.peerId);
-        }
-        return;
-      }
-
-      // Fallback mesh list received by the newcomer
-      if (data.type === 'peer-list') {
-        if (Array.isArray(data.peers)) {
-          // Allow existing peers 3 seconds to connect first, then fallback connect if missing
-          setTimeout(() => {
-            data.peers.forEach(id => {
-              if (id !== myPeerId && !connections.has(id)) {
-                connectToPeer(id);
-              }
-            });
-          }, 3000);
-        }
-        return;
-      }
-
-      if (data.type === 'chat-message') {
-        appendMessage({
-          id: data.id,
-          senderName: data.senderName || peerNicknames.get(peerId) || 'Member',
-          senderId: peerId,
-          content: data.content,
-          isOutgoing: false,
-          timestamp: data.timestamp
-        });
-
-        // Send delivery ACK receipt back to sender
-        try {
-          conn.send({ type: 'message-delivered', id: data.id });
-        } catch (e) {}
-        return;
-      }
-
-      if (data.type === 'message-delivered') {
-        markMessageDelivered(data.id);
-        return;
-      }
-
-      if (data.type === 'typing') {
-        const name = data.nickname || peerNicknames.get(peerId) || 'Someone';
-        if (activeTypers.has(peerId)) {
-          clearTimeout(activeTypers.get(peerId).timer);
-        }
-        // Auto-remove typing indicator after 3.5s in case stop-typing packet drops
-        const timer = setTimeout(() => {
-          activeTypers.delete(peerId);
-          updateTypingDisplay();
-        }, 3500);
-
-        activeTypers.set(peerId, { nickname: name, timer });
-        updateTypingDisplay();
-        return;
-      }
-
-      if (data.type === 'stop-typing') {
-        if (activeTypers.has(peerId)) {
-          clearTimeout(activeTypers.get(peerId).timer);
-          activeTypers.delete(peerId);
-        }
-        updateTypingDisplay();
-        return;
-      }
-
-      if (data.type === 'user-leave') {
-        handlePeerDeparture(peerId, data.nickname);
-        return;
-      }
-    });
-
-    conn.on('close', () => {
-      handlePeerDeparture(peerId);
-    });
-
-    conn.on('error', (err) => {
-      console.warn(`[CONN ERROR ${peerId}]`, err);
-    });
-  }
-
-  function handlePeerDeparture(peerId, explicitName = null) {
-    if (!connections.has(peerId)) return;
-    const departedName = explicitName || peerNicknames.get(peerId) || 'A participant';
-    connections.delete(peerId);
-    peerNicknames.delete(peerId);
-    if (activeTypers.has(peerId)) {
-      clearTimeout(activeTypers.get(peerId).timer);
-      activeTypers.delete(peerId);
-    }
-    updateTypingDisplay();
-    updateGroupStatus();
-    appendSystemBanner(`${departedName} left the chat`);
-    showToast(`${departedName} left the chat.`, 'info');
-  }
-
   function setupPeerErrorHandlers(p) {
     p.on('error', (err) => {
       console.warn('[PEER ERROR]', err);
       if (err.type === 'peer-unavailable') {
-        showToast('Room host unavailable or code expired.', 'error');
+        showToast('Group room host is offline or code is invalid.', 'error');
       } else if (err.type === 'unavailable-id') {
-        showToast('Room code collision. Retrying...', 'info');
+        showToast('Room code collision. Re-generating...', 'info');
       } else {
-        showToast(`Notice: ${err.type || 'network issue'}`, 'info');
+        showToast(`Notice: ${err.type || 'Connection alert'}`, 'info');
       }
     });
   }
 
   // --- HOME EVENT LISTENERS ---
-
   if (tabCreate) tabCreate.addEventListener('click', () => switchHomeTab('create'));
   if (tabJoin) tabJoin.addEventListener('click', () => switchHomeTab('join'));
 
-  // Generate Room Code Action (Host Role)
+  // --- ROOM CREATION (HOST ROLE) ---
   function createRoomSession(retryCount = 0) {
     if (retryCount > 4) {
-      showToast('Could not find available room ID. Please try again.', 'error');
+      showToast('Could not allocate available room. Please try again.', 'error');
       return;
     }
 
@@ -752,7 +532,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Random 6-digit numeric room code
     const roomCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const hostPeerId = `chatling-v1-${roomCode}`;
+    const hostPeerId = `chatling-grp-${roomCode}`;
 
     if (peer) {
       try { peer.destroy(); } catch (e) {}
@@ -770,22 +550,185 @@ document.addEventListener('DOMContentLoaded', () => {
     peer.on('open', (id) => {
       myPeerId = id;
       currentRoomCode = roomCode;
+      groupRoster = [{ id: myPeerId, name: myNickname, isHost: true }];
+
       if (createdCodeDisplay) createdCodeDisplay.textContent = roomCode;
       if (createActions) createActions.classList.remove('hidden');
       if (btnGenerateCode) btnGenerateCode.classList.add('hidden');
-      showToast(`Group Room ${roomCode} ready!`, 'success');
+      showToast(`Group Room ${roomCode} created!`, 'success');
     });
 
-    // Accept incoming joiners
+    // Accept incoming participants (Group Hub)
     peer.on('connection', (conn) => {
-      setupConnectionListeners(conn);
+      const joinerPeerId = conn.peer;
+
+      conn.on('open', () => {
+        // Connection opened with a joiner
+      });
+
+      conn.on('data', (data) => {
+        if (!data) return;
+
+        if (data.type === 'ping') return;
+
+        // 1. Join Request from a new participant
+        if (data.type === 'join-request') {
+          const joinerName = (data.nickname || 'Member').slice(0, 20);
+          
+          // Add to connected peers map
+          connectedPeers.set(data.senderId, {
+            conn: conn,
+            nickname: joinerName,
+            isHost: false
+          });
+
+          // Update canonical roster (prevent duplicates)
+          groupRoster = groupRoster.filter(m => m.id !== data.senderId);
+          groupRoster.push({
+            id: data.senderId,
+            name: joinerName,
+            isHost: false
+          });
+
+          // Send approval and full roster back to the new joiner
+          try {
+            conn.send({
+              type: 'join-approved',
+              roomCode: currentRoomCode,
+              members: groupRoster,
+              hostName: myNickname
+            });
+          } catch (e) {}
+
+          // Broadcast member-joined to all other members
+          broadcastToGroup({
+            type: 'member-joined',
+            member: { id: data.senderId, name: joinerName },
+            members: groupRoster
+          }, data.senderId);
+
+          // Update Host UI
+          showToast(`${joinerName} joined the group!`, 'success');
+          appendSystemBanner(`${joinerName} joined the group`);
+          updateGroupStatus();
+          playNotificationSound();
+          return;
+        }
+
+        // 2. Incoming Group Message (Relay to all other members)
+        if (data.type === 'group-message') {
+          if (!seenMessageIds.has(data.id)) {
+            seenMessageIds.add(data.id);
+
+            // Display on Host's screen
+            appendMessage({
+              id: data.id,
+              senderName: data.senderName,
+              senderId: data.senderId,
+              content: data.content,
+              isOutgoing: false,
+              timestamp: data.timestamp
+            });
+
+            playNotificationSound();
+
+            // Relay message to ALL other group members
+            broadcastToGroup({
+              type: 'group-message',
+              id: data.id,
+              senderName: data.senderName,
+              senderId: data.senderId,
+              content: data.content,
+              timestamp: data.timestamp
+            }, data.senderId);
+
+            // Send delivery acknowledgment back to the sender
+            try {
+              conn.send({ type: 'msg-ack', id: data.id });
+            } catch (e) {}
+          }
+          return;
+        }
+
+        // 3. Typing Indicators (Relay to everyone)
+        if (data.type === 'typing') {
+          const name = data.nickname || 'Someone';
+          if (activeTypers.has(data.senderId)) {
+            clearTimeout(activeTypers.get(data.senderId).timer);
+          }
+          const timer = setTimeout(() => {
+            activeTypers.delete(data.senderId);
+            updateTypingDisplay();
+          }, 3500);
+
+          activeTypers.set(data.senderId, { nickname: name, timer });
+          updateTypingDisplay();
+
+          // Relay typing event to other members
+          broadcastToGroup(data, data.senderId);
+          return;
+        }
+
+        if (data.type === 'stop-typing') {
+          if (activeTypers.has(data.senderId)) {
+            clearTimeout(activeTypers.get(data.senderId).timer);
+            activeTypers.delete(data.senderId);
+          }
+          updateTypingDisplay();
+
+          // Relay stop-typing event to other members
+          broadcastToGroup(data, data.senderId);
+          return;
+        }
+
+        // 4. Member Voluntary Leave
+        if (data.type === 'member-leave') {
+          handleMemberDeparture(data.senderId, data.nickname);
+          return;
+        }
+      });
+
+      conn.on('close', () => {
+        handleMemberDeparture(joinerPeerId);
+      });
+
+      conn.on('error', (err) => {
+        console.warn(`[HOST] Conn error with ${joinerPeerId}:`, err);
+      });
+    });
+  }
+
+  function handleMemberDeparture(peerId, explicitName = null) {
+    if (!connectedPeers.has(peerId)) return;
+    const peerData = connectedPeers.get(peerId);
+    const departedName = explicitName || (peerData ? peerData.nickname : 'A participant');
+
+    connectedPeers.delete(peerId);
+    groupRoster = groupRoster.filter(m => m.id !== peerId);
+
+    if (activeTypers.has(peerId)) {
+      clearTimeout(activeTypers.get(peerId).timer);
+      activeTypers.delete(peerId);
+      updateTypingDisplay();
+    }
+
+    updateGroupStatus();
+    appendSystemBanner(`${departedName} left the group`);
+    showToast(`${departedName} left the group.`, 'info');
+
+    // Broadcast departure to all remaining members
+    broadcastToGroup({
+      type: 'member-left',
+      memberId: peerId,
+      nickname: departedName,
+      members: groupRoster
     });
   }
 
   if (btnGenerateCode) {
     btnGenerateCode.addEventListener('click', () => {
       if (typeof Peer === 'undefined') {
-        showToast('WebRTC library loading... Please check internet connection.', 'error');
+        showToast('WebRTC library loading... Check internet connection.', 'error');
         return;
       }
       showToast('Creating private group room...', 'info');
@@ -803,7 +746,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Copy / Share Direct Invite Link Button
+  // Share Direct Invite Link
   async function shareOrCopyInvite() {
     if (!currentRoomCode) return;
     const shareUrl = `${window.location.origin}${window.location.pathname}?room=${currentRoomCode}`;
@@ -812,7 +755,7 @@ document.addEventListener('DOMContentLoaded', () => {
       try {
         await navigator.share({
           title: 'Join our private group chat on Chatling',
-          text: `Join my private group chat room on Chatling (Code: ${currentRoomCode})`,
+          text: `Join my private group chat on Chatling (Room: ${currentRoomCode})`,
           url: shareUrl
         });
         return;
@@ -829,7 +772,16 @@ document.addEventListener('DOMContentLoaded', () => {
   if (headerInviteBtn) headerInviteBtn.addEventListener('click', shareOrCopyInvite);
   if (btnModalInvite) btnModalInvite.addEventListener('click', shareOrCopyInvite);
 
-  // Enter Chat Button
+  if (btnModalCopyCode) {
+    btnModalCopyCode.addEventListener('click', () => {
+      if (currentRoomCode) {
+        navigator.clipboard.writeText(currentRoomCode);
+        showToast(`Room Code ${currentRoomCode} copied!`, 'info');
+      }
+    });
+  }
+
+  // Enter Chat Button from Create section
   if (btnEnterChat) {
     btnEnterChat.addEventListener('click', () => {
       if (currentRoomCode) {
@@ -838,12 +790,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Join Room Action (Joiner Role)
+  // --- ROOM JOINING (JOINER ROLE) ---
   function handleJoinRoom() {
     if (!joinCodeInput) return;
     const code = joinCodeInput.value.trim();
     
-    // Strict 6-digit numeric validation
     if (!/^\d{6}$/.test(code)) {
       showToast('Please enter a valid 6-digit room code.', 'error');
       return;
@@ -857,9 +808,9 @@ document.addEventListener('DOMContentLoaded', () => {
     myNickname = getEffectiveNickname();
     isHost = false;
 
-    showToast('Connecting to group room ' + code + '...', 'info');
+    showToast(`Connecting to group #${code}...`, 'info');
 
-    const hostPeerId = `chatling-v1-${code}`;
+    const hostPeerId = `chatling-grp-${code}`;
 
     if (peer) {
       try { peer.destroy(); } catch (e) {}
@@ -872,17 +823,122 @@ document.addEventListener('DOMContentLoaded', () => {
       myPeerId = id;
       currentRoomCode = code;
 
-      // Connect to the room host
-      const hostConn = peer.connect(hostPeerId, { reliable: true });
-      setupConnectionListeners(hostConn);
+      // Connect to group room host
+      hostConn = peer.connect(hostPeerId, { reliable: true });
 
-      // Auto enter chat view
-      enterChatView(code);
-    });
+      hostConn.on('open', () => {
+        // Send join request with nickname and self ID
+        hostConn.send({
+          type: 'join-request',
+          senderId: myPeerId,
+          nickname: myNickname
+        });
+      });
 
-    // Accept connections from other group peers (mesh)
-    peer.on('connection', (conn) => {
-      setupConnectionListeners(conn);
+      hostConn.on('data', (data) => {
+        if (!data) return;
+
+        if (data.type === 'ping') return;
+
+        // 1. Join approved by Host
+        if (data.type === 'join-approved') {
+          groupRoster = Array.isArray(data.members) ? data.members : [];
+          enterChatView(code);
+          showToast(`Joined Group #${code}!`, 'success');
+          appendSystemBanner(`Joined Group #${code}`);
+          updateGroupStatus();
+          return;
+        }
+
+        // 2. Another member joined
+        if (data.type === 'member-joined') {
+          if (Array.isArray(data.members)) {
+            groupRoster = data.members;
+          }
+          const joinerName = data.member ? data.member.name : 'A new member';
+          showToast(`${joinerName} joined the group!`, 'success');
+          appendSystemBanner(`${joinerName} joined the group`);
+          updateGroupStatus();
+          playNotificationSound();
+          return;
+        }
+
+        // 3. A member left
+        if (data.type === 'member-left') {
+          if (Array.isArray(data.members)) {
+            groupRoster = data.members;
+          }
+          const leftName = data.nickname || 'A member';
+          showToast(`${leftName} left the group.`, 'info');
+          appendSystemBanner(`${leftName} left the group`);
+          updateGroupStatus();
+          return;
+        }
+
+        // 4. Incoming Group Message
+        if (data.type === 'group-message') {
+          if (!seenMessageIds.has(data.id)) {
+            seenMessageIds.add(data.id);
+            appendMessage({
+              id: data.id,
+              senderName: data.senderName,
+              senderId: data.senderId,
+              content: data.content,
+              isOutgoing: false,
+              timestamp: data.timestamp
+            });
+            playNotificationSound();
+          }
+          return;
+        }
+
+        // 5. Message Delivery Acknowledgment
+        if (data.type === 'msg-ack') {
+          markMessageDelivered(data.id);
+          return;
+        }
+
+        // 6. Typing Indicators
+        if (data.type === 'typing') {
+          const name = data.nickname || 'Someone';
+          if (activeTypers.has(data.senderId)) {
+            clearTimeout(activeTypers.get(data.senderId).timer);
+          }
+          const timer = setTimeout(() => {
+            activeTypers.delete(data.senderId);
+            updateTypingDisplay();
+          }, 3500);
+
+          activeTypers.set(data.senderId, { nickname: name, timer });
+          updateTypingDisplay();
+          return;
+        }
+
+        if (data.type === 'stop-typing') {
+          if (activeTypers.has(data.senderId)) {
+            clearTimeout(activeTypers.get(data.senderId).timer);
+            activeTypers.delete(data.senderId);
+          }
+          updateTypingDisplay();
+          return;
+        }
+
+        // 7. Host closed the group
+        if (data.type === 'host-closed') {
+          showToast(data.message || 'Group host has ended the room.', 'info');
+          leaveChatRoom(false);
+          return;
+        }
+      });
+
+      hostConn.on('close', () => {
+        showToast('Group room disconnected.', 'info');
+        appendSystemBanner('Connection to group room host closed');
+      });
+
+      hostConn.on('error', (err) => {
+        console.warn('[JOINER] Host conn error:', err);
+      });
     });
   }
 
@@ -897,7 +953,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Auto Join via URL Query (`?room=839201`) with graceful PeerJS poll
+  // Check URL query parameters for auto-join
   const urlParams = new URLSearchParams(window.location.search);
   const roomParam = urlParams.get('room');
   if (roomParam && /^\d{6}$/.test(roomParam)) {
@@ -939,56 +995,66 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --- CHAT TOOLBAR EVENT LISTENERS ---
-
+  // --- CHAT TOOL ACTIONS ---
   if (headerCodePill) {
     headerCodePill.addEventListener('click', () => {
       if (currentRoomCode) {
         navigator.clipboard.writeText(currentRoomCode);
-        showToast('Room code copied to clipboard!', 'info');
+        showToast(`Room Code ${currentRoomCode} copied!`, 'info');
       }
     });
   }
 
   if (btnClearChat) {
     btnClearChat.addEventListener('click', () => {
-      if (!chatMessages) return;
-      chatMessages.innerHTML = `
-        <div class="flex justify-center my-1 sm:my-2 select-none">
-          <div class="bg-amber-500/10 dark:bg-amber-950/40 border border-amber-300/60 dark:border-amber-800/60 text-amber-800 dark:text-amber-300 text-[10px] sm:text-xs px-3 sm:px-3.5 py-1.5 sm:py-2 rounded-2xl shadow-sm text-center max-w-xs sm:max-w-md flex items-center gap-1.5 sm:gap-2 backdrop-blur-sm">
-            <svg class="w-3.5 h-3.5 sm:w-4 sm:h-4 shrink-0 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
-            </svg>
-            <span>Direct Peer-to-Peer Mesh • End-to-End Private • Zero DB</span>
-          </div>
-        </div>
-        <div id="messages-bottom-anchor" class="h-0 w-full shrink-0"></div>
-      `;
-      showToast('Local chat log cleared.', 'info');
+      if (!confirm('Clear all messages from your device?')) return;
+      if (chatMessages) {
+        const banners = chatMessages.querySelectorAll('div[id^="msg-wrap-"], .select-none:not(:first-child)');
+        banners.forEach(b => b.remove());
+        showToast('Chat history cleared locally.', 'info');
+      }
     });
   }
 
-  /**
-   * Leave Chat Room & Reset State
-   */
-  function leaveChatRoom(updateHistory = true) {
-    // Notify peers before closing
-    broadcastData({
-      type: 'user-leave',
-      peerId: myPeerId,
-      nickname: myNickname
-    });
+  // Leave Group Room
+  function leaveChatRoom(shouldConfirm = true) {
+    if (shouldConfirm && !confirm('Are you sure you want to leave this group chat?')) {
+      return;
+    }
 
-    connections.forEach((conn) => {
+    if (isHost) {
+      // Host closes the room for everyone
+      broadcastToGroup({
+        type: 'host-closed',
+        message: 'The group host has ended the chat.'
+      });
+    } else if (hostConn && hostConn.open) {
+      // Member notifies host of leave
       try {
-        conn.close();
+        hostConn.send({
+          type: 'member-leave',
+          senderId: myPeerId,
+          nickname: myNickname
+        });
       } catch (e) {}
-    });
-    connections.clear();
-    peerNicknames.clear();
+    }
 
-    activeTypers.forEach(t => clearTimeout(t.timer));
+    stopHeartbeat();
+
+    // Close all connections
+    connectedPeers.forEach((p) => {
+      try { p.conn.close(); } catch (e) {}
+    });
+    connectedPeers.clear();
+
+    if (hostConn) {
+      try { hostConn.close(); } catch (e) {}
+      hostConn = null;
+    }
+
+    groupRoster = [];
     activeTypers.clear();
+    seenMessageIds.clear();
 
     if (peer) {
       try { peer.destroy(); } catch (e) {}
@@ -998,35 +1064,98 @@ document.addEventListener('DOMContentLoaded', () => {
     currentRoomCode = null;
     myPeerId = null;
     isHost = false;
-    stopHeartbeat();
 
-    if (membersModal) membersModal.classList.add('hidden');
+    // Reset UI to home view
     if (chatView) chatView.classList.add('hidden');
     if (homeView) homeView.classList.remove('hidden');
-    if (headerGroupTitle) headerGroupTitle.textContent = 'Group Chat';
     if (createActions) createActions.classList.add('hidden');
     if (btnGenerateCode) btnGenerateCode.classList.remove('hidden');
     if (createdCodeDisplay) createdCodeDisplay.textContent = '------';
     if (joinCodeInput) joinCodeInput.value = '';
-    showToast('You left the group.', 'info');
 
-    // Clean up query param from URL
-    if (updateHistory && window.history && window.history.replaceState) {
+    // Clear messages
+    if (chatMessages) {
+      const messages = chatMessages.querySelectorAll('div[id^="msg-wrap-"]');
+      messages.forEach(m => m.remove());
+    }
+
+    // Clean URL
+    if (window.history && window.history.replaceState) {
       window.history.replaceState({}, '', window.location.pathname);
     }
+
+    showToast('You left the group chat.', 'info');
   }
 
   if (btnLeaveChat) {
     btnLeaveChat.addEventListener('click', () => leaveChatRoom(true));
   }
 
-  // Send Message Trigger
+  // --- TYPING INDICATOR EMISSION ---
+  if (messageInput) {
+    messageInput.addEventListener('input', () => {
+      if (!currentRoomCode) return;
+
+      if (!isTyping) {
+        isTyping = true;
+        const typingPayload = {
+          type: 'typing',
+          senderId: myPeerId,
+          nickname: myNickname
+        };
+        if (isHost) {
+          broadcastToGroup(typingPayload);
+        } else if (hostConn && hostConn.open) {
+          try { hostConn.send(typingPayload); } catch (e) {}
+        }
+      }
+
+      clearTimeout(typingTimeout);
+      typingTimeout = setTimeout(() => {
+        isTyping = false;
+        const stopPayload = {
+          type: 'stop-typing',
+          senderId: myPeerId
+        };
+        if (isHost) {
+          broadcastToGroup(stopPayload);
+        } else if (hostConn && hostConn.open) {
+          try { hostConn.send(stopPayload); } catch (e) {}
+        }
+      }, 2500);
+    });
+  }
+
+  // --- EMOJI PICKER ACTIONS ---
+  if (btnEmojiToggle && emojiPicker) {
+    btnEmojiToggle.addEventListener('click', (e) => {
+      e.stopPropagation();
+      emojiPicker.classList.toggle('hidden');
+    });
+
+    document.addEventListener('click', (e) => {
+      if (!emojiPicker.contains(e.target) && e.target !== btnEmojiToggle) {
+        emojiPicker.classList.add('hidden');
+      }
+    });
+
+    const emojiButtons = emojiPicker.querySelectorAll('.emoji-btn');
+    emojiButtons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        if (messageInput) {
+          messageInput.value += btn.textContent;
+          messageInput.focus();
+        }
+      });
+    });
+  }
+
+  // --- SEND MESSAGE TRIGGER ---
   function handleSendMessage() {
     if (!messageInput) return;
     const content = messageInput.value.trim();
     if (!content || !currentRoomCode) return;
 
-    // Limit maximum message length to 2000 chars
     const trimmedContent = content.slice(0, 2000);
     const tempId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const timestamp = new Date().toISOString();
@@ -1034,7 +1163,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Reset input field immediately
     messageInput.value = '';
 
-    // Append outgoing bubble locally as 'sent' (single tick)
+    // Record as seen so we don't display it again
+    seenMessageIds.add(tempId);
+
+    // Append outgoing bubble locally
     appendMessage({
       id: tempId,
       senderName: myNickname,
@@ -1042,24 +1174,42 @@ document.addEventListener('DOMContentLoaded', () => {
       content: trimmedContent,
       isOutgoing: true,
       timestamp,
-      status: 'sent'
+      status: isHost ? 'delivered' : 'sent'
     });
 
-    // Broadcast over WebRTC DataChannel to all connected group members
-    broadcastData({
-      type: 'chat-message',
+    const msgPayload = {
+      type: 'group-message',
       id: tempId,
       senderName: myNickname,
       senderId: myPeerId,
       content: trimmedContent,
       timestamp
-    });
+    };
 
-    broadcastData({ type: 'stop-typing' });
+    if (isHost) {
+      // Host broadcasts to all connected members
+      broadcastToGroup(msgPayload);
+    } else if (hostConn && hostConn.open) {
+      // Member sends to Host (which relays to everyone)
+      try {
+        hostConn.send(msgPayload);
+      } catch (e) {
+        console.warn('[SEND] Failed to send to host:', e);
+      }
+    }
+
+    const stopPayload = {
+      type: 'stop-typing',
+      senderId: myPeerId
+    };
+    if (isHost) {
+      broadcastToGroup(stopPayload);
+    } else if (hostConn && hostConn.open) {
+      try { hostConn.send(stopPayload); } catch (e) {}
+    }
     isTyping = false;
     clearTimeout(typingTimeout);
 
-    // Keep keyboard open and input focused
     messageInput.focus();
     scrollToBottom();
   }
@@ -1071,7 +1221,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Dismiss keyboard when user scrolls or taps the chat history (WhatsApp behavior)
+  // Dismiss keyboard when user scrolls or taps chat history (WhatsApp behavior)
   if (chatMessages) {
     const dismissKeyboard = (e) => {
       if (e.target && e.target.closest && e.target.closest('button, a, input, textarea')) return;
@@ -1092,80 +1242,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
     chatMessages.addEventListener('touchmove', () => {
       isUserScrolling = true;
-      if (document.activeElement === messageInput) {
-        messageInput.blur();
-      }
     }, { passive: true });
 
     chatMessages.addEventListener('touchend', () => {
-      setTimeout(() => { isUserScrolling = false; }, 300);
+      isUserScrolling = false;
     }, { passive: true });
   }
 
-  if (messageInput) {
-    messageInput.addEventListener('focus', () => {
-      setTimeout(() => scrollToBottom(), 80);
-      setTimeout(() => scrollToBottom(), 250);
-    });
+  // Global offline / online indicator
+  window.addEventListener('offline', () => {
+    if (connectionBanner) connectionBanner.classList.remove('hidden');
+  });
 
-    messageInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        handleSendMessage();
-      }
-    });
-
-    messageInput.addEventListener('input', () => {
-      if (!isTyping) {
-        isTyping = true;
-        broadcastData({
-          type: 'typing',
-          nickname: myNickname
-        });
-      }
-
-      clearTimeout(typingTimeout);
-      typingTimeout = setTimeout(() => {
-        isTyping = false;
-        broadcastData({ type: 'stop-typing' });
-      }, 1500);
-    });
-  }
-
-  // Keep chat dynamically anchored to the bottom as the mobile keyboard opens or closes
-  if (window.visualViewport) {
-    window.visualViewport.addEventListener('resize', () => {
-      if (chatView && !chatView.classList.contains('hidden')) {
-        scrollToBottom();
-      }
-    });
-    window.visualViewport.addEventListener('scroll', () => {
-      if (chatView && !chatView.classList.contains('hidden')) {
-        scrollToBottom();
-      }
-    });
-  }
-
-  // Emoji Picker Toggle
-  if (btnEmojiToggle && emojiPicker) {
-    btnEmojiToggle.addEventListener('click', (e) => {
-      e.stopPropagation();
-      emojiPicker.classList.toggle('hidden');
-    });
-
-    document.addEventListener('click', (e) => {
-      if (!emojiPicker.contains(e.target) && e.target !== btnEmojiToggle) {
-        emojiPicker.classList.add('hidden');
-      }
-    });
-
-    document.querySelectorAll('.emoji-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        if (messageInput) {
-          messageInput.value += btn.textContent;
-          messageInput.focus();
-        }
-      });
-    });
-  }
+  window.addEventListener('online', () => {
+    if (connectionBanner) connectionBanner.classList.add('hidden');
+    showToast('Network online. Group connected.', 'success');
+  });
 });

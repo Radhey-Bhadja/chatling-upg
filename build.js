@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 
-console.log('==> Building Chatling static distribution...');
+console.log('==> Building Chatling static distribution for Vercel...');
 
 const rootDir = __dirname;
 const publicDir = path.join(rootDir, 'public');
@@ -29,9 +29,7 @@ filesToCopy.forEach(({ src, dest }) => {
   if (fs.existsSync(srcPath)) {
     fs.copyFileSync(srcPath, destPath);
     console.log(`Copied ${src} -> ${dest}`);
-  } else {
-    console.warn(`Warning: source file ${src} not found.`);
   }
 });
 
-console.log('==> Build completed successfully! Ready for Vercel deployment.');
+console.log('==> Build completed successfully! 100% static distribution ready.');

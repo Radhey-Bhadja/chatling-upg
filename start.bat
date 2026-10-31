@@ -1,8 +1,8 @@
 @echo off
-title Chatling Ephemeral Chat Server
+title Chatling Ephemeral Group Chat Server
 color 0A
 echo =======================================================
-echo   Chatling Ephemeral Real-Time Group Chat Server
+echo   Chatling Ephemeral Group Chat (Local Server)
 echo =======================================================
 echo.
 node server/server.js
