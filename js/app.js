@@ -248,12 +248,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (connections.size > 0) {
       statusIndicator.className = 'absolute bottom-0 right-0 w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full bg-wa-green border-2 border-white dark:border-slate-900 status-pulse';
       const names = Array.from(peerNicknames.values());
-      if (names.length === 1) {
+      if (names.length === 0) {
+        statusText.textContent = `${connections.size} participant${connections.size > 1 ? 's' : ''} connected`;
+      } else if (names.length === 1) {
         statusText.textContent = `${names[0]} is online`;
       } else if (names.length === 2) {
         statusText.textContent = `${names[0]}, ${names[1]} online`;
-      } else if (names.length > 2) {
-        statusText.textContent = `${names[0]}, ${names[1]} +${names.length - 2} more`;
+      } else {
+        statusText.textContent = `${names[0]} & ${names.length - 1} others online`;
       }
       statusText.className = 'text-[10px] sm:text-xs text-wa-green font-medium truncate';
       startHeartbeat();
@@ -459,8 +461,8 @@ document.addEventListener('DOMContentLoaded', () => {
           ${initial}
         </div>
         <div class="bubble bubble-in py-2 px-3 sm:px-3.5 rounded-2xl rounded-bl-xs text-xs sm:text-sm max-w-[80%] sm:max-w-[68%]">
-          <div class="font-bold text-[11px] sm:text-xs mb-0.5 select-none flex items-center gap-1.5" style="color: ${nameColor}">
-            <span>${escapeHTML(name)}</span>
+          <div class="font-bold text-[11px] sm:text-xs mb-0.5 select-none flex items-center gap-1.5 truncate max-w-full" style="color: ${nameColor}">
+            <span class="truncate">${escapeHTML(name)}</span>
           </div>
           <div class="leading-relaxed text-slate-900 dark:text-slate-100 break-words overflow-wrap-anywhere">${contentHtml}</div>
           <div class="flex items-center justify-end gap-1 text-[10px] text-slate-400 dark:text-slate-500 mt-1 select-none">

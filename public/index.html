@@ -26,7 +26,8 @@
   <!-- High Priority Resource Hints -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link rel="preconnect" href="https://cdn.tailwindcss.com" />
+  <link rel="dns-prefetch" href="https://cdn.tailwindcss.com" />
+  <link rel="dns-prefetch" href="https://0.peerjs.com" />
   
   <!-- Google Fonts with Display Swap for Zero-Delay Text Rendering -->
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@600;800&display=swap" />
@@ -219,15 +220,14 @@
       <!-- Navigation Bar Tool Actions (Uniform & Non-Wrapping) -->
       <div class="flex items-center gap-1 sm:gap-1.5 shrink-0">
         <!-- Quick Invite / Share Button -->
-        <button type="button" id="header-invite-btn" title="Share invite link" aria-label="Share invite link" class="nav-btn w-8 h-8 sm:w-auto sm:h-8 sm:px-2.5 rounded-xl bg-emerald-500/10 hover:bg-emerald-500 text-emerald-600 hover:text-white dark:bg-emerald-500/20 dark:hover:bg-emerald-500 dark:text-emerald-300 dark:hover:text-white text-xs font-bold">
+        <button type="button" id="header-invite-btn" title="Share invite link" aria-label="Share invite link" class="nav-btn w-8 h-8 rounded-xl bg-emerald-500/10 hover:bg-emerald-500 text-emerald-600 hover:text-white dark:bg-emerald-500/20 dark:hover:bg-emerald-500 dark:text-emerald-300 dark:hover:text-white text-xs font-bold">
           <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
           </svg>
-          <span class="hidden sm:inline sm:ml-1">Invite</span>
         </button>
 
-        <!-- Room Code Pill (Shows on tablet/desktop) -->
-        <button type="button" id="header-code-pill" title="Click to copy room code" aria-label="Copy room code" class="nav-btn hidden md:flex items-center gap-1 px-2.5 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700">
+        <!-- Room Code Pill (Shows on large screens) -->
+        <button type="button" id="header-code-pill" title="Click to copy room code" aria-label="Copy room code" class="nav-btn hidden lg:flex items-center gap-1 px-2.5 h-8 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-xs font-mono font-bold text-slate-700 dark:text-slate-200 border border-slate-200/60 dark:border-slate-700">
           <span class="text-slate-400 dark:text-slate-500 text-[10px]">ROOM:</span>
           <span id="header-room-code" class="text-emerald-500 font-extrabold">------</span>
         </button>
@@ -252,11 +252,10 @@
         </button>
 
         <!-- Leave Chat Button -->
-        <button type="button" id="btn-leave-chat" aria-label="Leave Chat" class="nav-btn w-8 h-8 sm:w-auto sm:h-8 sm:px-2.5 rounded-xl bg-red-500/10 hover:bg-red-500 text-red-600 hover:text-white text-xs font-bold">
+        <button type="button" id="btn-leave-chat" aria-label="Leave Chat" title="Leave Chat" class="nav-btn w-8 h-8 rounded-xl bg-red-500/10 hover:bg-red-500 text-red-600 hover:text-white text-xs font-bold">
           <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
           </svg>
-          <span class="hidden sm:inline sm:ml-1">Leave</span>
         </button>
       </div>
     </header>
@@ -371,13 +370,8 @@
 
   </div>
 
-  <!-- PeerJS WebRTC Library (Local with Synchronous Fallback) -->
-  <script src="js/peerjs.min.js"></script>
-  <script>
-    if (typeof Peer === 'undefined') {
-      document.write('<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"><\/script>');
-    }
-  </script>
+  <!-- PeerJS WebRTC Library (Local with Non-Blocking CDN Fallback) -->
+  <script src="js/peerjs.min.js" onerror="this.onerror=null;this.src='https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js'"></script>
 
   <!-- Main Application Script -->
   <script src="js/app.js"></script>

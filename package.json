@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "description": "Private Ephemeral Group & 1-to-1 Web Chat",
   "scripts": {
-    "build": "node -e \"console.log('Chatling static build ready');\"",
-    "start": "node server/server.js"
+    "build": "node build.js"
   },
   "keywords": [
     "chatling",
