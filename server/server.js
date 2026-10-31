@@ -16,20 +16,18 @@ const io = new Server(server, {
   allowEIO3: true
 });
 
-// Serve static assets from public directory
-app.use(express.static(path.join(__dirname, 'public')));
+// Serve static assets from project root
+const staticDir = path.join(__dirname, '..');
+app.use(express.static(staticDir));
 
 // Fallback route to serve index.html for root requests
 app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(path.join(staticDir, 'index.html'));
 });
 
 // In-Memory Storage: Room Code -> { users: Array<{ id, nickname, joinedAt }>, createdAt }
 const rooms = new Map();
 
-/**
- * Generate a random 6-digit numeric room code
- */
 function generateRoomCode() {
   let code;
   do {
@@ -38,9 +36,6 @@ function generateRoomCode() {
   return code;
 }
 
-/**
- * Clean up empty rooms from memory
- */
 function cleanupRoom(code) {
   const room = rooms.get(code);
   if (room && room.users.length === 0) {
@@ -52,7 +47,6 @@ function cleanupRoom(code) {
 io.on('connection', (socket) => {
   console.log(`[CONNECTED] Socket ${socket.id}`);
 
-  // Create a new group chat room
   socket.on('create-room', ({ nickname } = {}, callback) => {
     const code = generateRoomCode();
     const userNick = (nickname || 'Host').trim();
@@ -66,13 +60,11 @@ io.on('connection', (socket) => {
     socket.currentRoom = code;
     socket.nickname = userNick;
 
-    console.log(`[GROUP ROOM CREATED] ${code} by ${userNick} (${socket.id})`);
     if (typeof callback === 'function') {
       callback({ success: true, code, nickname: userNick });
     }
   });
 
-  // Join an existing group room (allows multiple participants)
   socket.on('join-room', ({ code, nickname }, callback) => {
     const formattedCode = (code || '').trim();
     const room = rooms.get(formattedCode);
@@ -85,20 +77,15 @@ io.on('connection', (socket) => {
     }
 
     const userNick = (nickname || 'Member').trim();
-
-    // Add user to room
     room.users.push({ id: socket.id, nickname: userNick, joinedAt: Date.now() });
     socket.join(`room:${formattedCode}`);
     socket.currentRoom = formattedCode;
     socket.nickname = userNick;
 
-    console.log(`[USER JOINED GROUP] ${userNick} (${socket.id}) joined room ${formattedCode}. Total: ${room.users.length}`);
-
     if (typeof callback === 'function') {
       callback({ success: true, code: formattedCode, users: room.users });
     }
 
-    // Broadcast to room members that a new participant has connected
     io.to(`room:${formattedCode}`).emit('user-joined', {
       id: socket.id,
       nickname: userNick,
@@ -107,7 +94,6 @@ io.on('connection', (socket) => {
     });
   });
 
-  // Relay chat message to everyone else in the group room
   socket.on('send-message', ({ content, tempId, timestamp }) => {
     const roomCode = socket.currentRoom;
     if (!roomCode || !rooms.has(roomCode)) return;
@@ -120,14 +106,10 @@ io.on('connection', (socket) => {
       timestamp: timestamp || new Date().toISOString()
     };
 
-    // Broadcast to all other peers in group room
     socket.to(`room:${roomCode}`).emit('receive-message', messageData);
-
-    // Acknowledge delivery back to sender
     socket.emit('message-delivered', { id: messageData.id });
   });
 
-  // Typing indicators
   socket.on('typing', () => {
     if (socket.currentRoom) {
       socket.to(`room:${socket.currentRoom}`).emit('user-typing', {
@@ -145,7 +127,6 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Explicit leave room action
   socket.on('leave-room', () => {
     const code = socket.currentRoom;
     if (!code || !rooms.has(code)) return;
@@ -155,9 +136,6 @@ io.on('connection', (socket) => {
     socket.leave(`room:${code}`);
     socket.currentRoom = null;
 
-    console.log(`[USER LEFT GROUP] ${socket.nickname} (${socket.id}) left room ${code}`);
-
-    // Notify remaining room members
     socket.to(`room:${code}`).emit('user-left', {
       id: socket.id,
       nickname: socket.nickname || 'Member',
@@ -167,9 +145,7 @@ io.on('connection', (socket) => {
     cleanupRoom(code);
   });
 
-  // Handle socket disconnection
   socket.on('disconnect', () => {
-    console.log(`[DISCONNECTED] Socket ${socket.id}`);
     const code = socket.currentRoom;
     if (code && rooms.has(code)) {
       const room = rooms.get(code);
@@ -189,9 +165,8 @@ io.on('connection', (socket) => {
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`==================================================`);
-  console.log(` Chatling Ephemeral Group Chat Server Running `);
-  console.log(` Local URL: http://localhost:${PORT}`);
-  console.log(` Environment: Zero DB / Volatile In-Memory Group Storage `);
+  console.log(` Chatling Local Server Running on port ${PORT} `);
+  console.log(` http://localhost:${PORT}`);
   console.log(`==================================================`);
 });
 

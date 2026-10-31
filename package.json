@@ -3,13 +3,7 @@
   "version": "1.0.0",
   "description": "Private Ephemeral Group & 1-to-1 Web Chat",
   "scripts": {
-    "build": "node build.js",
-    "start": "node server.js",
-    "dev": "node --watch server.js"
-  },
-  "dependencies": {
-    "express": "^4.19.2",
-    "socket.io": "^4.7.5"
+    "start": "node server/server.js"
   },
   "keywords": [
     "chatling",
