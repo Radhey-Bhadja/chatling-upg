@@ -1,37 +1,38 @@
 // Chatling - Private Ephemeral Group Web Chat Engine
-// WebRTC DataChannel Full-Mesh Architecture with Automatic Signaling & Failover
-// Clean Light Theme Default (WhatsApp Emerald/Light Aesthetic)
+// Peer-to-Peer WebRTC Architecture by 6-Digit Room Code
+// 100% Client-Side Ready (Vercel, Static Hosting, & Local Server)
+// Authentic WhatsApp Aesthetic & Full Mobile Responsiveness
 
 document.addEventListener('DOMContentLoaded', () => {
-  // WebRTC ICE Servers Configuration (Google STUN for NAT & LAN Traversal)
-  const RTC_CONFIG = {
-    iceServers: [
-      { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' },
-      { urls: 'stun:stun2.l.google.com:19302' },
-      { urls: 'stun:stun3.l.google.com:19302' },
-      { urls: 'stun:stun4.l.google.com:19302' },
-      { urls: 'stun:global.stun.twilio.com:3478' }
-    ]
+  // STUN Configuration for WebRTC NAT Traversal
+  const PEER_CONFIG = {
+    config: {
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        { urls: 'stun:stun3.l.google.com:19302' },
+        { urls: 'stun:global.stun.twilio.com:3478' }
+      ]
+    },
+    debug: 0
   };
 
-  // State
-  let socket = null;
+  // State Management
+  let peer = null;
   let myPeerId = null;
   let myNickname = '';
   let isHost = false;
   let currentRoomCode = null;
+  let hostConnection = null; // Joiner's connection to host
 
-  // Active WebRTC Mesh: Map<peerId, { pc: RTCPeerConnection, dc: RTCDataChannel, nickname: string, dcOpen: boolean }>
-  const peers = new Map();
+  // Host tracks connected members: Map<peerId, { conn, nickname, isHost }>
+  const connectedPeers = new Map();
 
-  // Queued ICE candidates prior to setRemoteDescription: Map<peerId, RTCIceCandidateInit[]>
-  const iceCandidateQueues = new Map();
-
-  // Group Roster: Array<{ id: string, name: string, isHost: boolean }>
+  // Canonical Group Roster: Array<{ id: string, name: string, isHost: boolean }>
   let groupRoster = [];
 
-  // Message deduplication
+  // Deduplication set for message IDs
   const seenMessageIds = new Set();
 
   // Typing state: Map<peerId, { nickname: string, timer: any }>
@@ -40,13 +41,13 @@ document.addEventListener('DOMContentLoaded', () => {
   let isTyping = false;
   let heartbeatInterval = null;
 
-  // WhatsApp-style Participant Colors
+  // WhatsApp-style Participant Author Colors
   const NAME_COLORS = [
-    '#10b981', // Emerald
+    '#25D366', // Emerald Green
     '#0284c7', // Sky Blue
     '#8b5cf6', // Violet
-    '#f59e0b', // Amber
-    '#ec4899', // Pink
+    '#d97706', // Amber
+    '#db2777', // Pink
     '#0d9488', // Teal
     '#ea580c', // Orange
     '#4f46e5', // Indigo
@@ -131,9 +132,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // Force Light Theme default unless user explicitly chose dark
   const savedTheme = localStorage.getItem('chatling_theme');
-  const isDarkMode = savedTheme === 'dark'; // Strict light default
+  const isDarkMode = savedTheme === 'dark'; // Light Theme by default
   updateThemeUI(isDarkMode);
 
   if (btnThemeToggle) {
@@ -158,12 +158,12 @@ document.addEventListener('DOMContentLoaded', () => {
       osc.type = 'sine';
       osc.frequency.setValueAtTime(587.33, ctx.currentTime); // D5
       osc.frequency.exponentialRampToValueAtTime(880, ctx.currentTime + 0.1); // A5
-      gain.gain.setValueAtTime(0.08, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.25);
+      gain.gain.setValueAtTime(0.06, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.22);
       osc.connect(gain);
       gain.connect(ctx.destination);
       osc.start();
-      osc.stop(ctx.currentTime + 0.25);
+      osc.stop(ctx.currentTime + 0.22);
     } catch (e) {}
   }
 
@@ -349,7 +349,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // --- MESSAGE BUBBLES ---
+  // --- WHATSAPP MESSAGE BUBBLE RENDERING ---
   function appendMessage({ id, senderName, senderId, content, isOutgoing, timestamp, status = 'sent' }) {
     if (!chatMessages) return;
     if (document.getElementById(`msg-wrap-${id}`)) return;
@@ -363,39 +363,39 @@ document.addEventListener('DOMContentLoaded', () => {
     let statusTicks = '';
     if (isOutgoing) {
       if (status === 'delivered') {
-        statusTicks = `<svg class="w-3.5 h-3.5 text-sky-300 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7M5 7l4 4L19 1"/></svg>`;
+        // WhatsApp Double Blue Ticks
+        statusTicks = `<svg class="w-3.5 h-3.5 text-[#53bdeb] inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7M5 7l4 4L19 1"/></svg>`;
       } else {
-        statusTicks = `<svg class="w-3.5 h-3.5 text-emerald-200 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>`;
+        // WhatsApp Single Tick
+        statusTicks = `<svg class="w-3.5 h-3.5 text-slate-400 dark:text-slate-400 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>`;
       }
     }
 
     if (isOutgoing) {
-      wrapper.className = 'flex items-end justify-end my-1.5 w-full';
+      // WhatsApp Outgoing Bubble: Right aligned, soft green, bottom-right time & ticks
+      wrapper.className = 'flex items-end justify-end my-1 w-full';
       wrapper.innerHTML = `
-        <div class="bubble bubble-out py-2 px-3 sm:px-3.5 rounded-2xl rounded-br-xs text-xs sm:text-sm max-w-[85%] sm:max-w-[70%] shadow-xs">
+        <div class="bubble bubble-out py-1.5 px-3 rounded-xl text-xs sm:text-sm max-w-[85%] sm:max-w-[70%] shadow-xs">
           <div class="leading-relaxed break-words overflow-wrap-anywhere">${contentHtml}</div>
-          <div class="flex items-center justify-end gap-1 text-[10px] text-emerald-100 mt-1 select-none">
+          <div class="flex items-center justify-end gap-1 text-[10px] text-slate-500 dark:text-slate-300 mt-0.5 select-none font-medium">
             <span>${timeStr}</span>
             <span class="tick-icon">${statusTicks}</span>
           </div>
         </div>
       `;
     } else {
+      // WhatsApp Incoming Bubble: Left aligned, pure white, author name colored
       const name = senderName || 'Member';
       const nameColor = getSenderColor(name);
-      const initial = escapeHTML(name.charAt(0).toUpperCase());
 
-      wrapper.className = 'flex items-end justify-start gap-1.5 sm:gap-2 my-1.5 w-full';
+      wrapper.className = 'flex items-end justify-start my-1 w-full';
       wrapper.innerHTML = `
-        <div class="w-6 h-6 sm:w-7 sm:h-7 rounded-full flex items-center justify-center font-bold text-white text-[10px] sm:text-xs shrink-0 select-none shadow-xs" style="background-color: ${nameColor}">
-          ${initial}
-        </div>
-        <div class="bubble bubble-in py-2 px-3 sm:px-3.5 rounded-2xl rounded-bl-xs text-xs sm:text-sm max-w-[85%] sm:max-w-[70%]">
+        <div class="bubble bubble-in py-1.5 px-3 rounded-xl text-xs sm:text-sm max-w-[85%] sm:max-w-[70%] shadow-xs">
           <div class="text-[11px] font-bold mb-0.5 select-none" style="color: ${nameColor}">
             ${escapeHTML(name)}
           </div>
-          <div class="leading-relaxed break-words overflow-wrap-anywhere text-slate-800 dark:text-slate-100">${contentHtml}</div>
-          <div class="flex items-center justify-end gap-1 text-[10px] text-slate-400 dark:text-slate-500 mt-1 select-none">
+          <div class="leading-relaxed break-words overflow-wrap-anywhere text-slate-900 dark:text-slate-100">${contentHtml}</div>
+          <div class="flex items-center justify-end gap-1 text-[10px] text-slate-400 dark:text-slate-500 mt-0.5 select-none font-medium">
             <span>${timeStr}</span>
           </div>
         </div>
@@ -409,9 +409,9 @@ document.addEventListener('DOMContentLoaded', () => {
   function appendSystemBanner(message) {
     if (!chatMessages) return;
     const banner = document.createElement('div');
-    banner.className = 'flex justify-center my-2 select-none';
+    banner.className = 'flex justify-center my-1.5 select-none';
     banner.innerHTML = `
-      <div class="bg-slate-200/80 dark:bg-slate-800/80 text-slate-600 dark:text-slate-300 text-[10px] sm:text-xs px-3 py-1 rounded-full shadow-2xs backdrop-blur-sm max-w-[90%] text-center truncate">
+      <div class="bg-white/90 dark:bg-slate-800/90 text-slate-600 dark:text-slate-300 text-[10px] sm:text-xs px-3 py-1 rounded-full shadow-2xs backdrop-blur-sm max-w-[90%] text-center truncate border border-slate-200/50 dark:border-slate-700/50">
         ${escapeHTML(message)}
       </div>
     `;
@@ -424,7 +424,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (wrap) {
       const tickSpan = wrap.querySelector('.tick-icon');
       if (tickSpan) {
-        tickSpan.innerHTML = `<svg class="w-3.5 h-3.5 text-sky-300 inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7M5 7l4 4L19 1"/></svg>`;
+        tickSpan.innerHTML = `<svg class="w-3.5 h-3.5 text-[#53bdeb] inline-block ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7M5 7l4 4L19 1"/></svg>`;
       }
     }
   }
@@ -449,318 +449,305 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // --- WEBRTC CORE (GLARE-FREE PEER NEGOTIATION) ---
+  // --- WEBRTC PEER CONNECTION ENGINE ---
 
-  // Connect to local signaling server
-  function connectSignalingServer() {
-    if (socket && socket.connected) return Promise.resolve(socket);
-
-    return new Promise((resolve, reject) => {
-      if (typeof io === 'undefined') {
-        reject(new Error('Socket.IO client library is not loaded. Ensure local server is running.'));
-        return;
+  // Host: Broadcast to all connected participants
+  function broadcastToAll(payload, excludePeerId = null) {
+    connectedPeers.forEach((data, pId) => {
+      if (pId !== excludePeerId && data.conn && data.conn.open) {
+        try {
+          data.conn.send(payload);
+        } catch (e) {
+          console.warn(`[BROADCAST] Failed to send to ${pId}:`, e);
+        }
       }
-
-      socket = io(window.location.origin, {
-        reconnection: true,
-        reconnectionAttempts: 10,
-        reconnectionDelay: 1000,
-        timeout: 10000
-      });
-
-      socket.on('connect', () => {
-        myPeerId = socket.id;
-        console.log('[SIGNALING] Connected with ID:', myPeerId);
-        resolve(socket);
-      });
-
-      socket.on('connect_error', (err) => {
-        console.warn('[SIGNALING] Connection error:', err.message);
-      });
-
-      // Forwarded WebRTC Signals (Offer, Answer, Candidate)
-      socket.on('signal', handleRemoteSignal);
-
-      // Other peer leaves
-      socket.on('user-left', ({ peerId, nickname, roster }) => {
-        handlePeerDeparture(peerId, nickname, roster);
-      });
-
-      // Socket Fallback Messages (in case WebRTC DataChannel is restricted)
-      socket.on('relay-message', (data) => {
-        handleIncomingChatMessage(data);
-      });
-
-      socket.on('relay-typing', (data) => {
-        handleIncomingTyping(data);
-      });
     });
   }
 
-  // Create an RTCPeerConnection for a remote peer
-  function getOrCreatePeer(remotePeerId, remoteNickname) {
-    if (peers.has(remotePeerId)) {
-      return peers.get(remotePeerId);
-    }
+  // --- ROOM CODE GENERATION (100% INSTANT SYNCHRONOUS CLICK) ---
+  function handleGenerateRoom() {
+    myNickname = getEffectiveNickname();
+    isHost = true;
 
-    const pc = new RTCPeerConnection(RTC_CONFIG);
-    const peerData = {
-      pc,
-      dc: null,
-      nickname: remoteNickname || 'Member',
-      dcOpen: false
-    };
+    // 1. Generate 6-digit room code INSTANTLY (0 ms latency)
+    const roomCode = Math.floor(100000 + Math.random() * 900000).toString();
+    currentRoomCode = roomCode;
 
-    peers.set(remotePeerId, peerData);
-    if (!iceCandidateQueues.has(remotePeerId)) {
-      iceCandidateQueues.set(remotePeerId, []);
-    }
+    // 2. Update UI Immediately
+    if (createdCodeDisplay) createdCodeDisplay.textContent = roomCode;
+    if (createActions) createActions.classList.remove('hidden');
+    if (btnGenerateCode) btnGenerateCode.classList.add('hidden');
+    showToast(`Room #${roomCode} generated! Share code or enter chat.`, 'success');
 
-    // ICE Candidate event
-    pc.onicecandidate = (event) => {
-      if (event.candidate && socket && socket.connected) {
-        socket.emit('signal', {
-          to: remotePeerId,
-          signal: {
-            type: 'candidate',
-            candidate: event.candidate
-          }
-        });
-      }
-    };
-
-    // Connection State Change
-    pc.onconnectionstatechange = () => {
-      console.log(`[WebRTC] Peer ${remotePeerId} state:`, pc.connectionState);
-      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed' || pc.connectionState === 'closed') {
-        handlePeerDeparture(remotePeerId, peerData.nickname);
-      }
-    };
-
-    return peerData;
+    // 3. Initialize WebRTC Host Session
+    initHostSession(roomCode);
   }
 
-  // Setup RTCDataChannel events
-  function setupDataChannel(remotePeerId, dc) {
-    dc.onopen = () => {
-      console.log(`[WebRTC DC] DataChannel OPEN with ${remotePeerId}`);
-      const peerData = peers.get(remotePeerId);
-      if (peerData) {
-        peerData.dcOpen = true;
-      }
+  function initHostSession(roomCode) {
+    const hostPeerId = `chatling-${roomCode}`;
 
-      // Send handshake
-      try {
-        dc.send(JSON.stringify({
-          type: 'handshake',
-          senderId: myPeerId,
-          nickname: myNickname,
-          isHost: isHost
-        }));
-      } catch (e) {}
-
-      updateGroupStatus();
-    };
-
-    dc.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        handleDataChannelPayload(remotePeerId, data);
-      } catch (e) {
-        console.warn('[WebRTC DC] Failed to parse message:', e);
-      }
-    };
-
-    dc.onclose = () => {
-      console.log(`[WebRTC DC] DataChannel CLOSED with ${remotePeerId}`);
-      const peerData = peers.get(remotePeerId);
-      if (peerData) {
-        peerData.dcOpen = false;
-      }
-    };
-
-    dc.onerror = (err) => {
-      console.warn(`[WebRTC DC] Error with ${remotePeerId}:`, err);
-    };
-  }
-
-  // Drain queued ICE candidates once remoteDescription is set
-  async function drainIceCandidates(remotePeerId, pc) {
-    const queue = iceCandidateQueues.get(remotePeerId) || [];
-    while (queue.length > 0) {
-      const candidate = queue.shift();
-      try {
-        await pc.addIceCandidate(new RTCIceCandidate(candidate));
-      } catch (e) {
-        console.warn('[WebRTC] Error adding queued candidate:', e);
-      }
+    if (peer) {
+      try { peer.destroy(); } catch (e) {}
     }
-  }
 
-  // INITIATOR: Joiner initiates WebRTC connection with an existing peer
-  async function initiatePeerConnection(remotePeerId, remoteNickname) {
-    console.log(`[WebRTC] Initiating offer to existing peer: ${remoteNickname} (${remotePeerId})`);
-    const peerData = getOrCreatePeer(remotePeerId, remoteNickname);
-    const pc = peerData.pc;
-
-    // Create reliable ordered DataChannel
-    const dc = pc.createDataChannel('chatling', { ordered: true });
-    peerData.dc = dc;
-    setupDataChannel(remotePeerId, dc);
+    if (typeof Peer === 'undefined') {
+      console.warn('PeerJS library loading...');
+      return;
+    }
 
     try {
-      const offer = await pc.createOffer();
-      await pc.setLocalDescription(offer);
+      peer = new Peer(hostPeerId, PEER_CONFIG);
 
-      if (socket && socket.connected) {
-        socket.emit('signal', {
-          to: remotePeerId,
-          signal: {
-            type: 'offer',
-            sdp: pc.localDescription
-          }
+      peer.on('open', (id) => {
+        myPeerId = id;
+        groupRoster = [{ id: myPeerId, name: myNickname, isHost: true }];
+        console.log(`[HOST] Group Host active with ID: ${id}`);
+      });
+
+      peer.on('connection', (conn) => {
+        const joinerId = conn.peer;
+
+        conn.on('open', () => {
+          console.log(`[HOST] Joiner connected: ${joinerId}`);
         });
-      }
-    } catch (err) {
-      console.error('[WebRTC] Error creating offer:', err);
-    }
-  }
 
-  // RECEIVER: Handle incoming signaling messages
-  async function handleRemoteSignal({ from, signal }) {
-    if (!signal) return;
+        conn.on('data', (data) => {
+          if (!data || !data.type) return;
 
-    try {
-      // 1. Incoming Offer (We are the receiver)
-      if (signal.type === 'offer') {
-        console.log(`[WebRTC] Received offer from ${from}`);
-        const peerData = getOrCreatePeer(from, 'Member');
-        const pc = peerData.pc;
+          // Join request from participant
+          if (data.type === 'join-request') {
+            const joinerName = (data.nickname || 'Member').slice(0, 20);
 
-        // Listen for remote DataChannel
-        pc.ondatachannel = (e) => {
-          peerData.dc = e.channel;
-          setupDataChannel(from, e.channel);
-        };
+            connectedPeers.set(data.senderId, {
+              conn,
+              nickname: joinerName,
+              isHost: false
+            });
 
-        await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-        await drainIceCandidates(from, pc);
+            groupRoster = groupRoster.filter(m => m.id !== data.senderId);
+            groupRoster.push({
+              id: data.senderId,
+              name: joinerName,
+              isHost: false
+            });
 
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
+            // Approve joiner and send current roster
+            try {
+              conn.send({
+                type: 'join-approved',
+                roomCode: currentRoomCode,
+                members: groupRoster,
+                hostName: myNickname
+              });
+            } catch (e) {}
 
-        if (socket && socket.connected) {
-          socket.emit('signal', {
-            to: from,
-            signal: {
-              type: 'answer',
-              sdp: pc.localDescription
+            // Broadcast new member to everyone else
+            broadcastToAll({
+              type: 'member-joined',
+              member: { id: data.senderId, name: joinerName },
+              members: groupRoster
+            }, data.senderId);
+
+            showToast(`${joinerName} joined the group!`, 'success');
+            appendSystemBanner(`${joinerName} joined the group`);
+            updateGroupStatus();
+            playNotificationSound();
+            return;
+          }
+
+          // Group Message from participant (Host relays to all others)
+          if (data.type === 'chat') {
+            if (!seenMessageIds.has(data.id)) {
+              seenMessageIds.add(data.id);
+
+              appendMessage({
+                id: data.id,
+                senderName: data.senderName,
+                senderId: data.senderId,
+                content: data.content,
+                isOutgoing: false,
+                timestamp: data.timestamp
+              });
+
+              playNotificationSound();
+
+              // Relay to all other members
+              broadcastToAll(data, data.senderId);
+
+              // Acknowledge delivery
+              try { conn.send({ type: 'ack', id: data.id }); } catch (e) {}
             }
-          });
-        }
-      }
-      // 2. Incoming Answer (We were the initiator)
-      else if (signal.type === 'answer') {
-        console.log(`[WebRTC] Received answer from ${from}`);
-        const peerData = peers.get(from);
-        if (peerData && peerData.pc) {
-          await peerData.pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
-          await drainIceCandidates(from, peerData.pc);
-        }
-      }
-      // 3. Incoming ICE Candidate
-      else if (signal.type === 'candidate' && signal.candidate) {
-        const peerData = peers.get(from);
-        if (peerData && peerData.pc && peerData.pc.remoteDescription) {
-          try {
-            await peerData.pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
-          } catch (e) {
-            console.warn('[WebRTC] Candidate error:', e);
+            return;
           }
-        } else {
-          // Queue until setRemoteDescription completes
-          const queue = iceCandidateQueues.get(from) || [];
-          queue.push(signal.candidate);
-          iceCandidateQueues.set(from, queue);
-        }
-      }
-    } catch (err) {
-      console.error('[WebRTC] handleRemoteSignal error:', err);
-    }
-  }
 
-  // --- DATACHANNEL MESSAGES ---
-  function handleDataChannelPayload(senderPeerId, data) {
-    if (!data || !data.type) return;
+          // Typing indicators
+          if (data.type === 'typing' || data.type === 'stop-typing') {
+            handleIncomingTyping(data);
+            broadcastToAll(data, data.senderId);
+            return;
+          }
 
-    if (data.type === 'handshake') {
-      const peerData = peers.get(senderPeerId);
-      if (peerData) peerData.nickname = data.nickname || 'Member';
-
-      if (!groupRoster.some(m => m.id === senderPeerId)) {
-        groupRoster.push({
-          id: senderPeerId,
-          name: data.nickname || 'Member',
-          isHost: !!data.isHost
+          // Member leaves
+          if (data.type === 'leave') {
+            handleMemberDeparture(data.senderId, data.nickname);
+            return;
+          }
         });
-      }
 
-      showToast(`${data.nickname || 'Participant'} joined via WebRTC!`, 'success');
-      appendSystemBanner(`${data.nickname || 'A participant'} joined the group`);
-      updateGroupStatus();
-      playNotificationSound();
-      return;
-    }
+        conn.on('close', () => {
+          handleMemberDeparture(joinerId);
+        });
 
-    if (data.type === 'chat') {
-      handleIncomingChatMessage(data);
-      // Acknowledge delivery
-      const peerData = peers.get(senderPeerId);
-      if (peerData && peerData.dc && peerData.dc.readyState === 'open') {
-        try { peerData.dc.send(JSON.stringify({ type: 'ack', id: data.id })); } catch (e) {}
-      }
-      return;
-    }
+        conn.on('error', (err) => {
+          console.warn(`[HOST] Conn error with ${joinerId}:`, err);
+        });
+      });
 
-    if (data.type === 'ack') {
-      markMessageDelivered(data.id);
-      return;
-    }
-
-    if (data.type === 'typing' || data.type === 'stop-typing') {
-      handleIncomingTyping(data);
-      return;
-    }
-
-    if (data.type === 'ping') {
-      const peerData = peers.get(senderPeerId);
-      if (peerData && peerData.dc && peerData.dc.readyState === 'open') {
-        try { peerData.dc.send(JSON.stringify({ type: 'pong' })); } catch (e) {}
-      }
-      return;
-    }
-
-    if (data.type === 'leave') {
-      handlePeerDeparture(senderPeerId, data.nickname);
-      return;
+      peer.on('error', (err) => {
+        console.warn('[HOST] Peer error:', err);
+        if (err.type === 'unavailable-id') {
+          // Room collision: regenerate code
+          handleGenerateRoom();
+        }
+      });
+    } catch (e) {
+      console.error('[HOST] Init error:', e);
     }
   }
 
-  function handleIncomingChatMessage(data) {
-    if (!data || !data.id) return;
-    if (seenMessageIds.has(data.id)) return;
-    seenMessageIds.add(data.id);
+  // --- JOINING ROOM (MEMBER ROLE) ---
+  function handleJoinRoom() {
+    if (!joinCodeInput) return;
+    const code = joinCodeInput.value.trim();
+    if (!/^\d{6}$/.test(code)) {
+      showToast('Please enter a valid 6-digit room code.', 'error');
+      return;
+    }
 
-    appendMessage({
-      id: data.id,
-      senderName: data.senderName,
-      senderId: data.senderId,
-      content: data.content,
-      isOutgoing: false,
-      timestamp: data.timestamp
-    });
+    myNickname = getEffectiveNickname();
+    isHost = false;
+    currentRoomCode = code;
 
-    playNotificationSound();
+    showToast(`Connecting to group #${code}...`, 'info');
+
+    if (peer) {
+      try { peer.destroy(); } catch (e) {}
+    }
+
+    const hostPeerId = `chatling-${code}`;
+
+    try {
+      peer = new Peer(PEER_CONFIG);
+
+      peer.on('open', (id) => {
+        myPeerId = id;
+        console.log(`[MEMBER] My peer ID: ${id}`);
+
+        // Connect to host
+        hostConnection = peer.connect(hostPeerId, { reliable: true });
+
+        hostConnection.on('open', () => {
+          // Send join request
+          hostConnection.send({
+            type: 'join-request',
+            senderId: myPeerId,
+            nickname: myNickname
+          });
+        });
+
+        hostConnection.on('data', (data) => {
+          if (!data || !data.type) return;
+
+          // 1. Join Approved
+          if (data.type === 'join-approved') {
+            groupRoster = Array.isArray(data.members) ? data.members : [];
+            enterChatView(code);
+            showToast(`Joined Group #${code}!`, 'success');
+            appendSystemBanner(`Joined Group #${code}`);
+            updateGroupStatus();
+            return;
+          }
+
+          // 2. Another Member Joined
+          if (data.type === 'member-joined') {
+            if (Array.isArray(data.members)) groupRoster = data.members;
+            const joinerName = data.member ? data.member.name : 'A member';
+            showToast(`${joinerName} joined the group!`, 'success');
+            appendSystemBanner(`${joinerName} joined the group`);
+            updateGroupStatus();
+            playNotificationSound();
+            return;
+          }
+
+          // 3. Incoming Chat Message
+          if (data.type === 'chat') {
+            if (!seenMessageIds.has(data.id)) {
+              seenMessageIds.add(data.id);
+              appendMessage({
+                id: data.id,
+                senderName: data.senderName,
+                senderId: data.senderId,
+                content: data.content,
+                isOutgoing: false,
+                timestamp: data.timestamp
+              });
+              playNotificationSound();
+            }
+            return;
+          }
+
+          // 4. Delivery Ack
+          if (data.type === 'ack') {
+            markMessageDelivered(data.id);
+            return;
+          }
+
+          // 5. Typing Indicators
+          if (data.type === 'typing' || data.type === 'stop-typing') {
+            handleIncomingTyping(data);
+            return;
+          }
+
+          // 6. Member Left
+          if (data.type === 'member-left') {
+            if (Array.isArray(data.members)) groupRoster = data.members;
+            const leftName = data.nickname || 'A member';
+            showToast(`${leftName} left the group.`, 'info');
+            appendSystemBanner(`${leftName} left the group`);
+            updateGroupStatus();
+            return;
+          }
+
+          // 7. Host Closed
+          if (data.type === 'host-closed') {
+            showToast('The group host has ended the room.', 'info');
+            leaveChatRoom(false);
+            return;
+          }
+        });
+
+        hostConnection.on('close', () => {
+          showToast('Disconnected from group host.', 'info');
+          appendSystemBanner('Connection to group host lost');
+        });
+
+        hostConnection.on('error', (err) => {
+          console.warn('[MEMBER] Host conn error:', err);
+        });
+      });
+
+      peer.on('error', (err) => {
+        console.warn('[MEMBER] Peer error:', err);
+        if (err.type === 'peer-unavailable') {
+          showToast(`Group #${code} not found or host is offline.`, 'error');
+        } else {
+          showToast(`Connection notice: ${err.type || 'network issue'}`, 'info');
+        }
+      });
+
+    } catch (e) {
+      console.error('[MEMBER] Init error:', e);
+    }
   }
 
   function handleIncomingTyping(data) {
@@ -787,26 +774,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function handlePeerDeparture(peerId, explicitName = null, updatedRoster = null) {
-    if (!peers.has(peerId) && !groupRoster.some(m => m.id === peerId)) return;
+  function handleMemberDeparture(peerId, explicitName = null) {
+    if (!connectedPeers.has(peerId)) return;
+    const pData = connectedPeers.get(peerId);
+    const departedName = explicitName || (pData ? pData.nickname : 'A participant');
 
-    const peerData = peers.get(peerId);
-    const departedName = explicitName || (peerData ? peerData.nickname : 'A participant');
-
-    if (peerData) {
-      try {
-        if (peerData.dc) peerData.dc.close();
-        if (peerData.pc) peerData.pc.close();
-      } catch (e) {}
-      peers.delete(peerId);
-    }
-    iceCandidateQueues.delete(peerId);
-
-    if (updatedRoster && Array.isArray(updatedRoster)) {
-      groupRoster = updatedRoster.map(m => ({ id: m.id, name: m.nickname || m.name, isHost: m.isHost }));
-    } else {
-      groupRoster = groupRoster.filter(m => m.id !== peerId);
-    }
+    connectedPeers.delete(peerId);
+    groupRoster = groupRoster.filter(m => m.id !== peerId);
 
     if (activeTypers.has(peerId)) {
       clearTimeout(activeTypers.get(peerId).timer);
@@ -817,36 +791,23 @@ document.addEventListener('DOMContentLoaded', () => {
     updateGroupStatus();
     appendSystemBanner(`${departedName} left the group`);
     showToast(`${departedName} left the group.`, 'info');
-  }
 
-  // Broadcast payload across WebRTC DataChannels + Socket Relay fallback
-  function broadcastGroupPayload(payload) {
-    const raw = JSON.stringify(payload);
-    let dcSentCount = 0;
-
-    peers.forEach((peerData) => {
-      if (peerData.dc && peerData.dc.readyState === 'open') {
-        try {
-          peerData.dc.send(raw);
-          dcSentCount++;
-        } catch (e) {}
-      }
+    broadcastToAll({
+      type: 'member-left',
+      memberId: peerId,
+      nickname: departedName,
+      members: groupRoster
     });
-
-    // Fallback: If any peer doesn't have an open DataChannel, relay via socket
-    if (socket && socket.connected && dcSentCount < peers.size) {
-      if (payload.type === 'chat') {
-        socket.emit('relay-message', payload);
-      } else if (payload.type === 'typing' || payload.type === 'stop-typing') {
-        socket.emit('relay-typing', payload);
-      }
-    }
   }
 
   function startHeartbeat() {
     stopHeartbeat();
     heartbeatInterval = setInterval(() => {
-      broadcastGroupPayload({ type: 'ping' });
+      if (isHost) {
+        broadcastToAll({ type: 'ping' });
+      } else if (hostConnection && hostConnection.open) {
+        try { hostConnection.send({ type: 'ping' }); } catch (e) {}
+      }
     }, 15000);
   }
 
@@ -857,54 +818,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // --- ROOM CREATION (HOST ROLE) ---
-  async function createRoomSession() {
-    myNickname = getEffectiveNickname();
-    isHost = true;
+  // --- EVENT LISTENERS ---
 
-    const roomCode = Math.floor(100000 + Math.random() * 900000).toString();
-    currentRoomCode = roomCode;
-
-    try {
-      showToast('Connecting to server...', 'info');
-      const sigSocket = await connectSignalingServer();
-
-      // Clean old listeners
-      sigSocket.off('room-joined-ack');
-      sigSocket.off('user-joined');
-
-      sigSocket.emit('join-room', {
-        roomCode,
-        nickname: myNickname,
-        isHost: true
-      });
-
-      sigSocket.once('room-joined-ack', ({ roster }) => {
-        groupRoster = [{ id: myPeerId, name: myNickname, isHost: true }];
-        if (createdCodeDisplay) createdCodeDisplay.textContent = roomCode;
-        if (createActions) createActions.classList.remove('hidden');
-        if (btnGenerateCode) btnGenerateCode.classList.add('hidden');
-        showToast(`Group Room #${roomCode} created!`, 'success');
-      });
-
-      // Existing host listens for new joiners
-      // Notice: Existing host DOES NOT create an offer. The new joiner initiates!
-      sigSocket.on('user-joined', ({ peerId, nickname, isHost: remoteIsHost, roster }) => {
-        if (roster && Array.isArray(roster)) {
-          groupRoster = roster.map(m => ({ id: m.id, name: m.nickname || m.name, isHost: m.isHost }));
-        } else if (!groupRoster.some(m => m.id === peerId)) {
-          groupRoster.push({ id: peerId, name: nickname, isHost: remoteIsHost });
-        }
-        updateGroupStatus();
-      });
-
-    } catch (err) {
-      console.error('[ROOM CREATE ERROR]', err);
-      showToast('Could not reach local server. Run start.bat!', 'error');
-    }
-  }
-
-  if (btnGenerateCode) btnGenerateCode.addEventListener('click', createRoomSession);
+  if (btnGenerateCode) btnGenerateCode.addEventListener('click', handleGenerateRoom);
 
   if (btnCopyCode) {
     btnCopyCode.addEventListener('click', () => {
@@ -955,71 +871,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // --- ROOM JOINING (JOINER ROLE) ---
-  async function handleJoinRoom() {
-    if (!joinCodeInput) return;
-    const code = joinCodeInput.value.trim();
-    if (!/^\d{6}$/.test(code)) {
-      showToast('Please enter a valid 6-digit room code.', 'error');
-      return;
-    }
-
-    myNickname = getEffectiveNickname();
-    isHost = false;
-    currentRoomCode = code;
-
-    showToast(`Connecting to group #${code}...`, 'info');
-
-    try {
-      const sigSocket = await connectSignalingServer();
-
-      sigSocket.off('room-joined-ack');
-      sigSocket.off('user-joined');
-
-      sigSocket.emit('join-room', {
-        roomCode: code,
-        nickname: myNickname,
-        isHost: false
-      });
-
-      sigSocket.once('room-joined-ack', ({ peerId, existingUsers, roster }) => {
-        myPeerId = peerId;
-
-        if (roster && Array.isArray(roster)) {
-          groupRoster = roster.map(m => ({ id: m.id, name: m.nickname || m.name, isHost: m.isHost }));
-        } else {
-          groupRoster = [{ id: myPeerId, name: myNickname, isHost: false }];
-        }
-
-        // As the NEW joiner, we initiate WebRTC connections to all EXISTING users
-        if (Array.isArray(existingUsers)) {
-          existingUsers.forEach(u => {
-            initiatePeerConnection(u.id, u.nickname);
-          });
-        }
-
-        enterChatView(code);
-        showToast(`Joined Group #${code}!`, 'success');
-        appendSystemBanner(`Joined Group #${code}`);
-        updateGroupStatus();
-      });
-
-      // Subsequent peers who join after us
-      sigSocket.on('user-joined', ({ peerId, nickname, isHost: remoteIsHost, roster }) => {
-        if (roster && Array.isArray(roster)) {
-          groupRoster = roster.map(m => ({ id: m.id, name: m.nickname || m.name, isHost: m.isHost }));
-        } else if (!groupRoster.some(m => m.id === peerId)) {
-          groupRoster.push({ id: peerId, name: nickname, isHost: remoteIsHost });
-        }
-        updateGroupStatus();
-      });
-
-    } catch (err) {
-      console.error('[JOIN ERROR]', err);
-      showToast('Could not connect. Ensure start.bat is running!', 'error');
-    }
-  }
-
   if (btnJoinRoom) btnJoinRoom.addEventListener('click', handleJoinRoom);
 
   if (joinCodeInput) {
@@ -1042,11 +893,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }, 400);
   }
 
-  // --- HOME NAVIGATION TABS ---
+  // Home Navigation Tabs
   if (tabCreate) tabCreate.addEventListener('click', () => switchHomeTab('create'));
   if (tabJoin) tabJoin.addEventListener('click', () => switchHomeTab('join'));
 
-  // --- GROUP MODAL ---
+  // Group Members Modal
   if (btnGroupInfo && membersModal) {
     btnGroupInfo.addEventListener('click', () => {
       renderMembersList();
@@ -1096,27 +947,37 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    broadcastGroupPayload({
-      type: 'leave',
-      senderId: myPeerId,
-      nickname: myNickname
-    });
-
-    if (socket && socket.connected) {
-      socket.emit('leave-room');
+    if (isHost) {
+      broadcastToAll({
+        type: 'host-closed',
+        message: 'The group host has ended the chat.'
+      });
+    } else if (hostConnection && hostConnection.open) {
+      try {
+        hostConnection.send({
+          type: 'leave',
+          senderId: myPeerId,
+          nickname: myNickname
+        });
+      } catch (e) {}
     }
 
     stopHeartbeat();
 
-    // Teardown WebRTC peer connections
-    peers.forEach((p) => {
-      try {
-        if (p.dc) p.dc.close();
-        if (p.pc) p.pc.close();
-      } catch (e) {}
+    connectedPeers.forEach(p => {
+      try { p.conn.close(); } catch (e) {}
     });
-    peers.clear();
-    iceCandidateQueues.clear();
+    connectedPeers.clear();
+
+    if (hostConnection) {
+      try { hostConnection.close(); } catch (e) {}
+      hostConnection = null;
+    }
+
+    if (peer) {
+      try { peer.destroy(); } catch (e) {}
+      peer = null;
+    }
 
     groupRoster = [];
     activeTypers.clear();
@@ -1152,20 +1013,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if (!isTyping) {
         isTyping = true;
-        broadcastGroupPayload({
+        const typingPayload = {
           type: 'typing',
           senderId: myPeerId,
           nickname: myNickname
-        });
+        };
+        if (isHost) {
+          broadcastToAll(typingPayload);
+        } else if (hostConnection && hostConnection.open) {
+          try { hostConnection.send(typingPayload); } catch (e) {}
+        }
       }
 
       clearTimeout(typingTimeout);
       typingTimeout = setTimeout(() => {
         isTyping = false;
-        broadcastGroupPayload({
+        const stopPayload = {
           type: 'stop-typing',
           senderId: myPeerId
-        });
+        };
+        if (isHost) {
+          broadcastToAll(stopPayload);
+        } else if (hostConnection && hostConnection.open) {
+          try { hostConnection.send(stopPayload); } catch (e) {}
+        }
       }, 2500);
     });
   }
@@ -1207,9 +1078,9 @@ document.addEventListener('DOMContentLoaded', () => {
     messageInput.value = '';
     seenMessageIds.add(tempId);
 
-    const hasPeers = peers.size > 0;
+    const hasPeers = isHost ? connectedPeers.size > 0 : (hostConnection && hostConnection.open);
 
-    // Append outgoing bubble locally
+    // Append outgoing bubble locally (WhatsApp soft green bubble)
     appendMessage({
       id: tempId,
       senderName: myNickname,
@@ -1217,7 +1088,7 @@ document.addEventListener('DOMContentLoaded', () => {
       content: trimmedContent,
       isOutgoing: true,
       timestamp,
-      status: hasPeers ? 'sent' : 'delivered'
+      status: hasPeers ? 'delivered' : 'sent'
     });
 
     const msgPayload = {
@@ -1229,13 +1100,22 @@ document.addEventListener('DOMContentLoaded', () => {
       timestamp
     };
 
-    broadcastGroupPayload(msgPayload);
+    if (isHost) {
+      broadcastToAll(msgPayload);
+    } else if (hostConnection && hostConnection.open) {
+      try { hostConnection.send(msgPayload); } catch (e) {}
+    }
 
     // Stop typing
-    broadcastGroupPayload({
+    const stopPayload = {
       type: 'stop-typing',
       senderId: myPeerId
-    });
+    };
+    if (isHost) {
+      broadcastToAll(stopPayload);
+    } else if (hostConnection && hostConnection.open) {
+      try { hostConnection.send(stopPayload); } catch (e) {}
+    }
     isTyping = false;
     clearTimeout(typingTimeout);
 
@@ -1250,7 +1130,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Dismiss keyboard on scroll
+  // Dismiss keyboard when scrolling or tapping chat background (WhatsApp Mobile feature)
   if (chatMessages) {
     const dismissKeyboard = (e) => {
       if (e.target && e.target.closest && e.target.closest('button, a, input, textarea')) return;
@@ -1278,13 +1158,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }, { passive: true });
   }
 
-  // Global offline / online
+  // Global offline / online indicator
   window.addEventListener('offline', () => {
     if (connectionBanner) connectionBanner.classList.remove('hidden');
   });
 
   window.addEventListener('online', () => {
     if (connectionBanner) connectionBanner.classList.add('hidden');
-    showToast('Network back online.', 'success');
+    showToast('Network online.', 'success');
   });
 });

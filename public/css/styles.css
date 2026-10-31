@@ -2,26 +2,20 @@
   --font-sans: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 
-  /* Primary Brand Colors */
-  --color-primary: #10b981;
-  --color-primary-dark: #059669;
-  --color-accent: #06b6d4;
+  /* WhatsApp Brand Colors */
+  --wa-teal: #008069;
   --wa-green: #25D366;
-
-  /* Theme Backgrounds */
-  --bg-light: #f8fafc;
-  --bg-dark: #080c14;
+  --wa-green-dark: #059669;
+  --wa-bubble-out: #d9fdd3;
+  --wa-bubble-out-dark: #005c4b;
+  --wa-bubble-in: #ffffff;
+  --wa-bubble-in-dark: #202c33;
+  --wa-bg-light: #efeae2;
+  --wa-bg-dark: #0b141a;
+  --wa-tick-blue: #53bdeb;
 }
 
-.bg-wa-green {
-  background-color: #10b981 !important;
-}
-
-.text-wa-green {
-  color: #10b981 !important;
-}
-
-/* Dynamic Viewport Height & Mobile Browser Polish */
+/* Reset & Dynamic Viewport Height */
 * {
   box-sizing: border-box;
 }
@@ -36,38 +30,26 @@ html, body {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
   background-color: #f8fafc;
-  color: #1e293b;
+  color: #111b21;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
 .dark html, .dark body, html.dark, html.dark body {
-  background-color: #080c14;
-  color: #f1f5f9;
+  background-color: #0b141a;
+  color: #e9edef;
 }
 
-/* Safe Area Inset Support for Mobile Browsers */
+/* Safe Area Inset Support for Notch & Mobile Nav Bars */
 footer {
-  padding-bottom: max(0.625rem, env(safe-area-inset-bottom));
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
 }
 
-/* Smooth layout transitions */
-#home-view, #chat-view {
-  transition: opacity 0.15s ease-out;
-}
-
-/* Custom High Performance Scrollbar */
+/* Scrollbar Polish */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
-}
-
-@media (min-width: 640px) {
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
@@ -75,16 +57,12 @@ footer {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(156, 163, 175, 0.3);
+  background: rgba(134, 150, 160, 0.3);
   border-radius: 9999px;
 }
 
 .dark ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(156, 163, 175, 0.5);
 }
 
 /* Chat Messages WhatsApp Scroll View */
@@ -97,11 +75,7 @@ footer {
   flex-direction: column;
 }
 
-/* 
- * Modern Flexbox Chat Spacer:
- * Absorbs empty vertical height when there are few messages (bottom pinning),
- * but collapses to 0 when overflowing so user can freely scroll to the top!
- */
+/* Flexbox Bottom Anchor Spacer (Collapses when scrolling up) */
 #chat-messages::before {
   content: "";
   display: block;
@@ -109,20 +83,22 @@ footer {
   min-height: 8px;
 }
 
-/* Chat Background Pattern */
+/* Authentic WhatsApp Chat Wallpaper Pattern */
 .wa-chat-bg {
   background-color: #efeae2;
-  background-image: radial-gradient(#d1c7b7 1.2px, transparent 1.2px);
-  background-size: 18px 18px;
+  background-image: 
+    radial-gradient(#d1c7b7 1.2px, transparent 1.2px),
+    radial-gradient(rgba(0, 0, 0, 0.02) 1px, transparent 1px);
+  background-size: 20px 20px, 40px 40px;
 }
 
 .dark .wa-chat-bg {
   background-color: #0b141a;
   background-image: radial-gradient(rgba(255, 255, 255, 0.05) 1.2px, transparent 1.2px);
-  background-size: 18px 18px;
+  background-size: 20px 20px;
 }
 
-/* Header Navigation Bar Buttons Uniform Sizing */
+/* Header Navigation Bar Buttons */
 .nav-btn {
   display: inline-flex;
   align-items: center;
@@ -132,12 +108,12 @@ footer {
   cursor: pointer;
 }
 
-/* Chat Message Bubbles */
+/* WhatsApp Message Bubbles */
 .bubble {
   position: relative;
   word-break: break-word;
   overflow-wrap: anywhere;
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+  box-shadow: 0 1px 0.5px rgba(11, 20, 26, 0.13);
   animation: bubble-in 0.15s cubic-bezier(0.16, 1, 0.3, 1) ease-out;
 }
 
@@ -152,30 +128,30 @@ footer {
   }
 }
 
+/* Outgoing Message (Right Aligned, WhatsApp Soft Green) */
 .bubble-out {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  color: #ffffff;
-  border-top-right-radius: 4px !important;
+  background-color: #d9fdd3;
+  color: #111b21;
+  border-radius: 12px 12px 2px 12px !important;
 }
 
 .dark .bubble-out {
-  background: linear-gradient(135deg, #059669 0%, #047857 100%);
-  color: #f8fafc;
-  border-top-right-radius: 4px !important;
+  background-color: #005c4b;
+  color: #e9edef;
+  border-radius: 12px 12px 2px 12px !important;
 }
 
+/* Incoming Message (Left Aligned, Pure White) */
 .bubble-in {
   background-color: #ffffff;
-  color: #0f172a;
-  border-top-left-radius: 4px !important;
-  border: 1px solid rgba(226, 232, 240, 0.8);
+  color: #111b21;
+  border-radius: 12px 12px 12px 2px !important;
 }
 
 .dark .bubble-in {
-  background-color: #1e293b;
-  color: #f1f5f9;
-  border-top-left-radius: 4px !important;
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background-color: #202c33;
+  color: #e9edef;
+  border-radius: 12px 12px 12px 2px !important;
 }
 
 /* Status Pulse Animation */
@@ -186,7 +162,7 @@ footer {
   }
   70% {
     transform: scale(1);
-    box-shadow: 0 0 0 7px rgba(16, 185, 129, 0);
+    box-shadow: 0 0 0 6px rgba(16, 185, 129, 0);
   }
   100% {
     transform: scale(0.95);
@@ -224,7 +200,7 @@ footer {
 }
 
 .glow-subtle {
-  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.12);
 }
 
 .dark .glow-subtle {
